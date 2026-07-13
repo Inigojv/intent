@@ -30,6 +30,14 @@ enum SoftUnblockGrantStore {
       saveActiveSession(session)
     }
 
+    if session.budgetModeEnabled {
+      if session.resetBudgetIfNeeded(at: date) {
+        saveActiveSession(session)
+      } else if session.consumeBudgetIfNeeded(at: date) {
+        saveActiveSession(session)
+      }
+    }
+
     return session
   }
 
@@ -38,7 +46,10 @@ enum SoftUnblockGrantStore {
     profileId: UUID,
     maximumUnblockCount: Int,
     allowanceResetIntervalInHours: Int?,
-    startedAt: Date
+    startedAt: Date,
+    budgetModeEnabled: Bool = false,
+    budgetDurationInMinutes: Int = 20,
+    budgetResetIntervalInHours: Int = 1
   ) {
     clearAll()
 
@@ -55,7 +66,15 @@ enum SoftUnblockGrantStore {
       nextAllowanceResetAt: resetInterval.map {
         startedAt.addingTimeInterval(TimeInterval($0 * 60 * 60))
       },
-      usedUnblockCount: 0
+      usedUnblockCount: 0,
+      budgetModeEnabled: budgetModeEnabled,
+      budgetDurationInMinutes: max(1, budgetDurationInMinutes),
+      budgetResetIntervalInHours: max(1, budgetResetIntervalInHours),
+      remainingBudgetInSeconds: TimeInterval(max(1, budgetDurationInMinutes) * 60),
+      nextBudgetResetAt: budgetModeEnabled ? startedAt.addingTimeInterval(
+        TimeInterval(max(1, budgetResetIntervalInHours) * 60 * 60)
+      ) : nil,
+      budgetLastUpdatedAt: startedAt
     )
     saveActiveSession(state)
   }
@@ -68,6 +87,14 @@ enum SoftUnblockGrantStore {
       let grantData = try? JSONEncoder().encode(grant)
     else {
       return false
+    }
+
+    if session.budgetModeEnabled {
+      guard !session.hasBudgetExpired else { return false }
+      session.consumeBudgetIfNeeded(at: grant.createdAt)
+      if session.hasBudgetExpired {
+        return false
+      }
     }
 
     session.usedUnblockCount += 1

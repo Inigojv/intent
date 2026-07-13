@@ -12,6 +12,9 @@ struct SoftUnblockStrategyData: Codable, Equatable {
   var accessDurationInMinutes: Int
   var maximumUnblockCount: Int
   var allowanceResetIntervalInHours: Int?
+  var budgetModeEnabled: Bool = false
+  var budgetDurationInMinutes: Int = 20
+  var budgetResetIntervalInHours: Int = 1
 
   static func decode(_ data: Data?) -> SoftUnblockStrategyData {
     guard let data,
@@ -43,7 +46,10 @@ struct SoftUnblockStrategyData: Codable, Equatable {
       ),
       allowanceResetIntervalInHours: allowanceResetIntervalInHours.flatMap { interval in
         Self.allowanceResetIntervalsInHours.contains(interval) ? interval : nil
-      }
+      },
+      budgetModeEnabled: budgetModeEnabled,
+      budgetDurationInMinutes: max(1, budgetDurationInMinutes),
+      budgetResetIntervalInHours: max(1, budgetResetIntervalInHours)
     )
   }
 }

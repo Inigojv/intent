@@ -10,6 +10,9 @@ struct SoftUnblockConfigurationView: View {
   @State private var maximumUnblockCount: Int
   @State private var accessDurationInMinutes: Int
   @State private var allowanceResetIntervalInHours: Int?
+  @State private var budgetModeEnabled: Bool
+  @State private var budgetDurationInMinutes: Int
+  @State private var budgetResetIntervalInHours: Int
 
   init(
     profileName: String,
@@ -25,6 +28,9 @@ struct SoftUnblockConfigurationView: View {
     _allowanceResetIntervalInHours = State(
       initialValue: initialConfiguration.allowanceResetIntervalInHours
     )
+    _budgetModeEnabled = State(initialValue: initialConfiguration.budgetModeEnabled)
+    _budgetDurationInMinutes = State(initialValue: initialConfiguration.budgetDurationInMinutes)
+    _budgetResetIntervalInHours = State(initialValue: initialConfiguration.budgetResetIntervalInHours)
   }
 
   var body: some View {
@@ -109,6 +115,46 @@ struct SoftUnblockConfigurationView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
+
+            VStack(alignment: .leading, spacing: 12) {
+              Toggle(isOn: $budgetModeEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                  Text("Budget Mode")
+                    .font(.headline)
+                  Text("Let Temporary Access use a rolling time budget instead of fixed open counts.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+              }
+              .tint(themeManager.themeColor)
+
+              if budgetModeEnabled {
+                VStack(alignment: .leading, spacing: 8) {
+                  Text("Budget Duration")
+                    .font(.subheadline.weight(.semibold))
+
+                  Stepper(value: $budgetDurationInMinutes, in: 1...180) {
+                    Text("\(budgetDurationInMinutes) min")
+                  }
+
+                  Text("Budget decreases while access stays available. When it reaches zero, access ends until the next reset.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                  Text("Reset Interval")
+                    .font(.subheadline.weight(.semibold))
+
+                  Picker("Reset Interval", selection: $budgetResetIntervalInHours) {
+                    ForEach([1, 2, 4, 8, 12, 24], id: \.self) { hours in
+                      Text("\(hours)h").tag(hours)
+                    }
+                  }
+                  .pickerStyle(.segmented)
+                }
+              }
+            }
           }
           .padding(.horizontal, 24)
           .padding(.top, 24)
@@ -142,7 +188,10 @@ struct SoftUnblockConfigurationView: View {
         SoftUnblockStrategyData(
           accessDurationInMinutes: accessDurationInMinutes,
           maximumUnblockCount: maximumUnblockCount,
-          allowanceResetIntervalInHours: allowanceResetIntervalInHours
+          allowanceResetIntervalInHours: allowanceResetIntervalInHours,
+          budgetModeEnabled: budgetModeEnabled,
+          budgetDurationInMinutes: budgetDurationInMinutes,
+          budgetResetIntervalInHours: budgetResetIntervalInHours
         )
       )
       dismiss()

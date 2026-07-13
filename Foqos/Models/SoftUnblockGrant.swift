@@ -41,8 +41,19 @@ struct SoftUnblockSessionState: Codable, Equatable {
   var nextAllowanceResetAt: Date?
   var usedUnblockCount: Int
 
+  var budgetModeEnabled: Bool = false
+  var budgetDurationInMinutes: Int = 20
+  var budgetResetIntervalInHours: Int = 1
+  var remainingBudgetInSeconds: TimeInterval = 20 * 60
+  var nextBudgetResetAt: Date?
+  var budgetLastUpdatedAt: Date?
+
   var remainingUnblockCount: Int {
     max(maximumUnblockCount - usedUnblockCount, 0)
+  }
+
+  var hasBudgetExpired: Bool {
+    remainingBudgetInSeconds <= 0
   }
 
   @discardableResult
@@ -70,5 +81,50 @@ struct SoftUnblockSessionState: Codable, Equatable {
     guard date >= allowanceWindowStartedAt else { return false }
     guard let nextAllowanceResetAt else { return true }
     return date < nextAllowanceResetAt
+  }
+
+  @discardableResult
+  mutating func consumeBudgetIfNeeded(at date: Date) -> Bool {
+    guard budgetModeEnabled else { return false }
+
+    if let nextBudgetResetAt, date >= nextBudgetResetAt {
+      resetBudgetIfNeeded(at: date)
+    }
+
+    let lastUpdatedAt = budgetLastUpdatedAt ?? date
+    let elapsed = max(0, date.timeIntervalSince(lastUpdatedAt))
+    let newRemainingBudget = max(0, remainingBudgetInSeconds - elapsed)
+
+    remainingBudgetInSeconds = newRemainingBudget
+    budgetLastUpdatedAt = date
+
+    return true
+  }
+
+  @discardableResult
+  mutating func resetBudgetIfNeeded(at date: Date) -> Bool {
+    guard budgetModeEnabled else { return false }
+
+    if let nextBudgetResetAt, date < nextBudgetResetAt {
+      return false
+    }
+
+    remainingBudgetInSeconds = TimeInterval(budgetDurationInMinutes * 60)
+    let interval = TimeInterval(budgetResetIntervalInHours * 60 * 60)
+    let resetDate = nextBudgetResetAt ?? date
+    let nextReset = resetDate.addingTimeInterval(interval)
+
+    while nextReset <= date {
+      let adjusted = nextReset.addingTimeInterval(interval)
+      if adjusted <= date {
+        nextReset = adjusted
+      } else {
+        break
+      }
+    }
+
+    nextBudgetResetAt = nextReset
+    budgetLastUpdatedAt = date
+    return true
   }
 }

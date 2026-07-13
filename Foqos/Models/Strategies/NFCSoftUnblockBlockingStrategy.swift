@@ -66,7 +66,10 @@ final class NFCSoftUnblockBlockingStrategy: BlockingStrategy {
           profileId: profile.id,
           maximumUnblockCount: configuration.maximumUnblockCount,
           allowanceResetIntervalInHours: configuration.allowanceResetIntervalInHours,
-          startedAt: activeSession.startTime
+          startedAt: activeSession.startTime,
+          budgetModeEnabled: configuration.budgetModeEnabled,
+          budgetDurationInMinutes: configuration.budgetDurationInMinutes,
+          budgetResetIntervalInHours: configuration.budgetResetIntervalInHours
         )
         self.appBlocker.activateRestrictions(for: BlockedProfiles.getSnapshot(for: profile))
         self.onSessionCreation?(.started(activeSession))

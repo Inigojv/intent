@@ -118,6 +118,39 @@ final class SoftUnblockTests: XCTestCase {
     XCTAssertNil(SoftUnblockGrantScheduler.identifiers(from: activityName))
   }
 
+  func testBudgetModeConsumesTimeAndStopsAtZero() {
+    let start = Date(timeIntervalSince1970: 1_000_000)
+    var session = makeBudgetSession(
+      startedAt: start,
+      budgetDurationMinutes: 20,
+      resetHours: 1
+    )
+
+    XCTAssertTrue(session.consumeBudgetIfNeeded(at: start.addingTimeInterval(5 * 60)))
+    XCTAssertEqual(session.remainingBudgetInSeconds, 15 * 60, accuracy: 0.001)
+    XCTAssertFalse(session.hasBudgetExpired)
+
+    XCTAssertTrue(session.consumeBudgetIfNeeded(at: start.addingTimeInterval(20 * 60)))
+    XCTAssertEqual(session.remainingBudgetInSeconds, 0, accuracy: 0.001)
+    XCTAssertTrue(session.hasBudgetExpired)
+  }
+
+  func testBudgetModeRestoresAtResetBoundary() {
+    let start = Date(timeIntervalSince1970: 1_000_000)
+    var session = makeBudgetSession(
+      startedAt: start,
+      budgetDurationMinutes: 20,
+      resetHours: 1
+    )
+
+    XCTAssertTrue(session.consumeBudgetIfNeeded(at: start.addingTimeInterval(5 * 60)))
+    XCTAssertEqual(session.remainingBudgetInSeconds, 15 * 60, accuracy: 0.001)
+
+    XCTAssertTrue(session.resetBudgetIfNeeded(at: start.addingTimeInterval(60 * 60)))
+    XCTAssertEqual(session.remainingBudgetInSeconds, 20 * 60, accuracy: 0.001)
+    XCTAssertFalse(session.hasBudgetExpired)
+  }
+
   private func makeSession(
     startedAt: Date,
     resetHours: Int?,
@@ -133,6 +166,28 @@ final class SoftUnblockTests: XCTestCase {
         startedAt.addingTimeInterval(TimeInterval($0 * 60 * 60))
       },
       usedUnblockCount: usedUnblocks
+    )
+  }
+
+  private func makeBudgetSession(
+    startedAt: Date,
+    budgetDurationMinutes: Int,
+    resetHours: Int
+  ) -> SoftUnblockSessionState {
+    SoftUnblockSessionState(
+      sessionId: UUID().uuidString,
+      profileId: UUID(),
+      maximumUnblockCount: 3,
+      allowanceResetIntervalInHours: nil,
+      allowanceWindowStartedAt: startedAt,
+      nextAllowanceResetAt: nil,
+      usedUnblockCount: 0,
+      budgetModeEnabled: true,
+      budgetDurationInMinutes: budgetDurationMinutes,
+      budgetResetIntervalInHours: resetHours,
+      remainingBudgetInSeconds: TimeInterval(budgetDurationMinutes * 60),
+      nextBudgetResetAt: startedAt.addingTimeInterval(TimeInterval(resetHours * 60 * 60)),
+      budgetLastUpdatedAt: startedAt
     )
   }
 }
