@@ -42,7 +42,10 @@ protocol BlockingSessionLifecycleHandler {
 
 enum BlockingSessionLifecycleRegistry {
   private static var handlers: [any BlockingSessionLifecycleHandler] {
-    [SoftUnblockSessionLifecycleHandler()]
+    [
+      SoftUnblockSessionLifecycleHandler(),
+      UsageBasedBlockingSessionLifecycleHandler(),
+    ]
   }
 
   static func sessionDidStart(_ context: BlockingSessionLifecycleContext) {

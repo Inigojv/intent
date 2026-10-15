@@ -4,6 +4,7 @@ enum StrategyStartSettingsKind: String, Identifiable {
   case timer
   case pauseTimer
   case temporaryAccess
+  case usageBased
 
   var id: String { rawValue }
 
@@ -30,6 +31,11 @@ enum StrategyStartSettingsKind: String, Identifiable {
       return
     }
 
+    if strategyId == UsageBasedBlockingStrategy.id {
+      self = .usageBased
+      return
+    }
+
     return nil
   }
 
@@ -37,7 +43,7 @@ enum StrategyStartSettingsKind: String, Identifiable {
     switch self {
     case .temporaryAccess:
       return [.large]
-    case .timer, .pauseTimer:
+    case .timer, .pauseTimer, .usageBased:
       return [.medium, .large]
     }
   }
@@ -54,6 +60,10 @@ enum StrategyStartSettingsKind: String, Identifiable {
       )
     case .temporaryAccess:
       return SoftUnblockStrategyData.encode(SoftUnblockStrategyData.decode(nil))
+    case .usageBased:
+      return UsageBasedStrategyData.encode(
+        UsageBasedStrategyData(allowanceInMinutes: UsageBasedStrategyData.defaultAllowanceInMinutes)
+      )
     }
   }
 }
@@ -102,6 +112,15 @@ struct StrategyStartSettingsView: View {
         actionTitle: "Save Settings"
       ) { configuration in
         draft.strategyData = SoftUnblockStrategyData.encode(configuration)
+      }
+
+    case .usageBased:
+      UsageBasedConfigurationView(
+        profileName: profileName,
+        initialConfiguration: UsageBasedStrategyData.decode(draft.strategyData),
+        actionTitle: "Save Settings"
+      ) { configuration in
+        draft.strategyData = UsageBasedStrategyData.encode(configuration)
       }
     }
   }

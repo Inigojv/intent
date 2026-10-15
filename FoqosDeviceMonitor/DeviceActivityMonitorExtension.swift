@@ -34,6 +34,37 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
     super.intervalDidEnd(for: activity)
 
     log.info("intervalDidEnd for activity: \(activity.rawValue)")
+    if UsageBasedActivityScheduler.currentState(for: activity) != nil {
+      appBlocker.deactivateUsageBasedRestrictions()
+      do {
+        try UsageBasedActivityScheduler.advance(after: activity)
+      } catch {
+        log.error("Failed to schedule the next hourly usage interval: \(error.localizedDescription)")
+      }
+      return
+    }
+
     TimerActivityUtil.stopTimerActivity(for: activity)
+  }
+
+  override func eventDidReachThreshold(
+    _ event: DeviceActivityEvent.Name,
+    activity: DeviceActivityName
+  ) {
+    super.eventDidReachThreshold(event, activity: activity)
+
+    guard event == UsageBasedActivityScheduler.thresholdEvent,
+      let state = UsageBasedActivityScheduler.currentState(for: activity),
+      let currentWindow = UsageBasedActivityScheduler.hourlyWindow(containing: Date()),
+      state.windowStart == currentWindow.start
+    else {
+      return
+    }
+
+    appBlocker.activateUsageBasedRestrictions(
+      applicationTokens: state.applicationTokens,
+      categoryTokens: state.categoryTokens,
+      webDomainTokens: state.webDomainTokens
+    )
   }
 }

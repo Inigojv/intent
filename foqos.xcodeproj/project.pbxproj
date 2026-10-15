@@ -224,6 +224,7 @@
 				Models/SoftUnblockGrant.swift,
 				Models/Strategies/BlockingSessionLifecycle.swift,
 				Models/Strategies/Data/SoftUnblockStrategyData.swift,
+				Models/Strategies/Data/UsageBasedStrategyData.swift,
 				Models/Strategies/SoftUnblockSessionLifecycleHandler.swift,
 				Models/Timers/BreakTimerActivity.swift,
 				Models/Timers/PauseTimerActivity.swift,
@@ -236,6 +237,7 @@
 				Utils/AppBlockerUtil.swift,
 				Utils/SoftUnblockGrantScheduler.swift,
 				Utils/SoftUnblockGrantStore.swift,
+				Utils/UsageBasedActivityScheduler.swift,
 			);
 			target = 801713092DE6C78C00B77FE1 /* FoqosDeviceMonitor */;
 		};

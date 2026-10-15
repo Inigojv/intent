@@ -8,6 +8,7 @@ class StrategyManager: ObservableObject {
   static let availableStrategies: [BlockingStrategy] = [
     NFCSoftUnblockBlockingStrategy(),
     QRSoftUnblockBlockingStrategy(),
+    UsageBasedBlockingStrategy(),
     ManualBlockingStrategy(),
     NFCBlockingStrategy(),
     NFCManualBlockingStrategy(),
@@ -79,6 +80,28 @@ class StrategyManager: ObservableObject {
   func loadActiveSession(context: ModelContext) {
     activeSession = getActiveSession(context: context)
     ActiveProfileSyncStore.publish(session: activeSession)
+
+    if let session = activeSession,
+      session.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id
+    {
+      let profile = session.blockedProfile
+      let configuration = UsageBasedStrategyData.decode(profile.strategyData)
+      do {
+        try UsageBasedActivityScheduler.reconcile(
+          profileId: profile.id,
+          sessionId: session.id,
+          applicationTokens: profile.selectedActivity.applicationTokens,
+          categoryTokens: profile.selectedActivity.categoryTokens,
+          webDomainTokens: profile.selectedActivity.webDomainTokens,
+          allowanceInMinutes: configuration.allowanceInMinutes
+        )
+      } catch {
+        errorMessage = "Failed to resume hourly usage monitoring: \(error.localizedDescription)"
+      }
+    } else if let state = UsageBasedActivityScheduler.currentState {
+      UsageBasedActivityScheduler.stop(sessionId: state.sessionId)
+      appBlocker.deactivateUsageBasedRestrictions()
+    }
 
     if activeSession?.isActive == true {
       startTimer()

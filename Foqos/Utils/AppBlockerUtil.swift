@@ -4,6 +4,9 @@ class AppBlockerUtil {
   let store = ManagedSettingsStore(
     named: ManagedSettingsStore.Name("foqosAppRestrictions")
   )
+  private let usageBasedStore = ManagedSettingsStore(
+    named: ManagedSettingsStore.Name("foqosUsageBasedRestrictions")
+  )
 
   func activateRestrictions(for profile: SharedData.ProfileSnapshot) {
     let selection = profile.selectedActivity
@@ -38,6 +41,22 @@ class AppBlockerUtil {
       categoryTokens: categoryTokens,
       categoryApplicationExceptions: unblockedApplicationTokens
     )
+  }
+
+  func activateUsageBasedRestrictions(
+    applicationTokens: Set<ApplicationToken>,
+    categoryTokens: Set<ActivityCategoryToken>,
+    webDomainTokens: Set<WebDomainToken>
+  ) {
+    usageBasedStore.shield.applications = applicationTokens.isEmpty ? nil : applicationTokens
+    usageBasedStore.shield.applicationCategories = categoryTokens.isEmpty
+      ? nil
+      : .specific(categoryTokens, except: [])
+    usageBasedStore.shield.webDomains = webDomainTokens.isEmpty ? nil : webDomainTokens
+  }
+
+  func deactivateUsageBasedRestrictions() {
+    usageBasedStore.clearAllSettings()
   }
 
   private func applyRestrictions(
