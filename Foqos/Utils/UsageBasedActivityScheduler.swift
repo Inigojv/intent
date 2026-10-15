@@ -9,7 +9,64 @@ struct UsageBasedMonitoringState: Codable, Equatable {
   let categoryTokens: Set<ActivityCategoryToken>
   let webDomainTokens: Set<WebDomainToken>
   let allowanceInMinutes: Int
+  let enableFiveMinuteWarning: Bool
   var windowStart: Date
+  var warningSent = false
+  var allowanceReached = false
+
+  init(
+    profileId: UUID,
+    sessionId: String,
+    applicationTokens: Set<ApplicationToken>,
+    categoryTokens: Set<ActivityCategoryToken>,
+    webDomainTokens: Set<WebDomainToken>,
+    allowanceInMinutes: Int,
+    enableFiveMinuteWarning: Bool = true,
+    windowStart: Date,
+    warningSent: Bool = false,
+    allowanceReached: Bool = false
+  ) {
+    self.profileId = profileId
+    self.sessionId = sessionId
+    self.applicationTokens = applicationTokens
+    self.categoryTokens = categoryTokens
+    self.webDomainTokens = webDomainTokens
+    self.allowanceInMinutes = allowanceInMinutes
+    self.enableFiveMinuteWarning = enableFiveMinuteWarning
+    self.windowStart = windowStart
+    self.warningSent = warningSent
+    self.allowanceReached = allowanceReached
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case profileId
+    case sessionId
+    case applicationTokens
+    case categoryTokens
+    case webDomainTokens
+    case allowanceInMinutes
+    case enableFiveMinuteWarning
+    case windowStart
+    case warningSent
+    case allowanceReached
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    profileId = try container.decode(UUID.self, forKey: .profileId)
+    sessionId = try container.decode(String.self, forKey: .sessionId)
+    applicationTokens = try container.decode(Set<ApplicationToken>.self, forKey: .applicationTokens)
+    categoryTokens = try container.decode(Set<ActivityCategoryToken>.self, forKey: .categoryTokens)
+    webDomainTokens = try container.decode(Set<WebDomainToken>.self, forKey: .webDomainTokens)
+    allowanceInMinutes = try container.decode(Int.self, forKey: .allowanceInMinutes)
+    enableFiveMinuteWarning = try container.decodeIfPresent(
+      Bool.self,
+      forKey: .enableFiveMinuteWarning
+    ) ?? true
+    windowStart = try container.decode(Date.self, forKey: .windowStart)
+    warningSent = try container.decodeIfPresent(Bool.self, forKey: .warningSent) ?? false
+    allowanceReached = try container.decodeIfPresent(Bool.self, forKey: .allowanceReached) ?? false
+  }
 
   var activityName: DeviceActivityName {
     DeviceActivityName(
@@ -17,11 +74,30 @@ struct UsageBasedMonitoringState: Codable, Equatable {
         "\(UsageBasedActivityScheduler.activityPrefix):\(profileId.uuidString):\(sessionId):\(Int(windowStart.timeIntervalSince1970))"
     )
   }
+
+  mutating func markWarningSent() -> Bool {
+    guard !warningSent, !allowanceReached else { return false }
+    warningSent = true
+    return true
+  }
+
+  mutating func markAllowanceReached() -> Bool {
+    guard !allowanceReached else { return false }
+    allowanceReached = true
+    return true
+  }
+
+  mutating func beginWindow(at date: Date) {
+    windowStart = date
+    warningSent = false
+    allowanceReached = false
+  }
 }
 
 enum UsageBasedActivityScheduler {
   static let activityPrefix = "UsageBasedBlockingActivity"
   static let thresholdEvent = DeviceActivityEvent.Name("usageAllowanceReached")
+  static let warningEventName = DeviceActivityEvent.Name("usageFiveMinutesRemaining")
 
   private static let stateKey = "usageBasedBlocking.monitoringState"
   private static let suite = UserDefaults(suiteName: "group.dev.ambitionsoftware.foqos")!
@@ -43,6 +119,7 @@ enum UsageBasedActivityScheduler {
     categoryTokens: Set<ActivityCategoryToken>,
     webDomainTokens: Set<WebDomainToken>,
     allowanceInMinutes: Int,
+    enableFiveMinuteWarning: Bool = true,
     at date: Date = Date(),
     calendar: Calendar = .current
   ) throws {
@@ -60,6 +137,7 @@ enum UsageBasedActivityScheduler {
         max(allowanceInMinutes, UsageBasedStrategyData.allowanceRangeInMinutes.lowerBound),
         UsageBasedStrategyData.allowanceRangeInMinutes.upperBound
       ),
+      enableFiveMinuteWarning: enableFiveMinuteWarning,
       windowStart: window.start
     )
 
@@ -94,7 +172,7 @@ enum UsageBasedActivityScheduler {
     }
 
     var nextState = state
-    nextState.windowStart = nextWindow.start
+    nextState.beginWindow(at: nextWindow.start)
     save(nextState)
     DeviceActivityCenter().stopMonitoring([activity])
     try schedule(nextState, window: nextWindow, calendar: calendar)
@@ -107,6 +185,7 @@ enum UsageBasedActivityScheduler {
     categoryTokens: Set<ActivityCategoryToken>,
     webDomainTokens: Set<WebDomainToken>,
     allowanceInMinutes: Int,
+    enableFiveMinuteWarning: Bool = true,
     at date: Date = Date(),
     calendar: Calendar = .current
   ) throws {
@@ -130,6 +209,7 @@ enum UsageBasedActivityScheduler {
         categoryTokens: categoryTokens,
         webDomainTokens: webDomainTokens,
         allowanceInMinutes: allowanceInMinutes,
+        enableFiveMinuteWarning: enableFiveMinuteWarning,
         at: date,
         calendar: calendar
       )
@@ -140,7 +220,7 @@ enum UsageBasedActivityScheduler {
     if state.windowStart != window.start {
       AppBlockerUtil().deactivateUsageBasedRestrictions()
       center.stopMonitoring([state.activityName])
-      state.windowStart = window.start
+      state.beginWindow(at: window.start)
       save(state)
       try schedule(state, window: window, calendar: calendar)
       return
@@ -162,11 +242,57 @@ enum UsageBasedActivityScheduler {
   }
 
   static func event(for state: UsageBasedMonitoringState) -> DeviceActivityEvent {
+    event(for: state, thresholdInMinutes: state.allowanceInMinutes)
+  }
+
+  static func warningEvent(for state: UsageBasedMonitoringState) -> DeviceActivityEvent? {
+    guard state.enableFiveMinuteWarning, state.allowanceInMinutes > 5 else { return nil }
+    return event(for: state, thresholdInMinutes: state.allowanceInMinutes - 5)
+  }
+
+  static func markWarningSent(
+    for activity: DeviceActivityName,
+    at date: Date = Date(),
+    calendar: Calendar = .current
+  ) -> UsageBasedMonitoringState? {
+    guard var state = currentState(for: activity),
+      let window = hourlyWindow(containing: date, calendar: calendar),
+      state.windowStart == window.start,
+      state.markWarningSent()
+    else {
+      return nil
+    }
+
+    save(state)
+    return state
+  }
+
+  static func markAllowanceReached(
+    for activity: DeviceActivityName,
+    at date: Date = Date(),
+    calendar: Calendar = .current
+  ) -> UsageBasedMonitoringState? {
+    guard var state = currentState(for: activity),
+      let window = hourlyWindow(containing: date, calendar: calendar),
+      state.windowStart == window.start,
+      state.markAllowanceReached()
+    else {
+      return nil
+    }
+
+    save(state)
+    return state
+  }
+
+  private static func event(
+    for state: UsageBasedMonitoringState,
+    thresholdInMinutes: Int
+  ) -> DeviceActivityEvent {
     DeviceActivityEvent(
       applications: state.applicationTokens,
       categories: state.categoryTokens,
       webDomains: state.webDomainTokens,
-      threshold: DateComponents(minute: state.allowanceInMinutes),
+      threshold: DateComponents(minute: thresholdInMinutes),
       includesPastActivity: true
     )
   }
@@ -186,12 +312,15 @@ enum UsageBasedActivityScheduler {
       intervalEnd: intervalEnd,
       repeats: false
     )
-    let event = Self.event(for: state)
+    var events = [Self.thresholdEvent: Self.event(for: state)]
+    if let warningEvent = Self.warningEvent(for: state) {
+      events[Self.warningEventName] = warningEvent
+    }
 
     try DeviceActivityCenter().startMonitoring(
       state.activityName,
       during: schedule,
-      events: [Self.thresholdEvent: event]
+      events: events
     )
   }
 

@@ -89,6 +89,9 @@ final class UsageBasedBlockingStrategy: BlockingStrategy {
     forceStart: Bool
   ) {
     appBlocker.deactivateUsageBasedRestrictions()
+    if configuration.enableFiveMinuteWarning && configuration.allowanceInMinutes > 5 {
+      UsageBasedNotificationScheduler.requestAuthorization()
+    }
 
     let session = BlockedProfileSession.createSession(
       in: context,
@@ -104,7 +107,8 @@ final class UsageBasedBlockingStrategy: BlockingStrategy {
         applicationTokens: profile.selectedActivity.applicationTokens,
         categoryTokens: profile.selectedActivity.categoryTokens,
         webDomainTokens: profile.selectedActivity.webDomainTokens,
-        allowanceInMinutes: configuration.allowanceInMinutes
+        allowanceInMinutes: configuration.allowanceInMinutes,
+        enableFiveMinuteWarning: configuration.enableFiveMinuteWarning
       )
       onSessionCreation?(.started(session))
     } catch {

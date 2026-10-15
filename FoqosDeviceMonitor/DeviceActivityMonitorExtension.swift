@@ -53,13 +53,17 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
   ) {
     super.eventDidReachThreshold(event, activity: activity)
 
-    guard event == UsageBasedActivityScheduler.thresholdEvent,
-      let state = UsageBasedActivityScheduler.currentState(for: activity),
-      let currentWindow = UsageBasedActivityScheduler.hourlyWindow(containing: Date()),
-      state.windowStart == currentWindow.start
-    else {
+    if event == UsageBasedActivityScheduler.warningEventName {
+      guard let state = UsageBasedActivityScheduler.markWarningSent(for: activity) else {
+        return
+      }
+      UsageBasedNotificationScheduler.sendFiveMinutesLeft(for: state)
       return
     }
+
+    guard event == UsageBasedActivityScheduler.thresholdEvent,
+      let state = UsageBasedActivityScheduler.markAllowanceReached(for: activity)
+    else { return }
 
     appBlocker.activateUsageBasedRestrictions(
       applicationTokens: state.applicationTokens,

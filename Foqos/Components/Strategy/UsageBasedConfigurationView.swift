@@ -9,6 +9,7 @@ struct UsageBasedConfigurationView: View {
   let onSave: (UsageBasedStrategyData) -> Void
 
   @State private var allowanceInMinutes: Int
+  @State private var enableFiveMinuteWarning: Bool
 
   init(
     profileName: String,
@@ -20,6 +21,9 @@ struct UsageBasedConfigurationView: View {
     self.actionTitle = actionTitle
     self.onSave = onSave
     _allowanceInMinutes = State(initialValue: initialConfiguration.allowanceInMinutes)
+    _enableFiveMinuteWarning = State(
+      initialValue: initialConfiguration.enableFiveMinuteWarning
+    )
   }
 
   var body: some View {
@@ -46,6 +50,15 @@ struct UsageBasedConfigurationView: View {
             }
           }
           .sensoryFeedback(.selection, trigger: allowanceInMinutes)
+
+          Toggle("5-minute warning", isOn: $enableFiveMinuteWarning)
+            .tint(themeManager.themeColor)
+
+          if allowanceInMinutes <= 5 {
+            Text("A warning requires an allowance of at least 6 minutes.")
+              .font(.caption)
+              .foregroundColor(.secondary)
+          }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 24)
@@ -58,7 +71,12 @@ struct UsageBasedConfigurationView: View {
           backgroundColor: themeManager.themeColor,
           iconName: "checkmark.circle.fill"
         ) {
-          onSave(UsageBasedStrategyData(allowanceInMinutes: allowanceInMinutes))
+          onSave(
+            UsageBasedStrategyData(
+              allowanceInMinutes: allowanceInMinutes,
+              enableFiveMinuteWarning: enableFiveMinuteWarning
+            )
+          )
           dismiss()
         }
         .padding(.horizontal, 24)

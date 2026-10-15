@@ -93,7 +93,8 @@ class StrategyManager: ObservableObject {
           applicationTokens: profile.selectedActivity.applicationTokens,
           categoryTokens: profile.selectedActivity.categoryTokens,
           webDomainTokens: profile.selectedActivity.webDomainTokens,
-          allowanceInMinutes: configuration.allowanceInMinutes
+          allowanceInMinutes: configuration.allowanceInMinutes,
+          enableFiveMinuteWarning: configuration.enableFiveMinuteWarning
         )
       } catch {
         errorMessage = "Failed to resume hourly usage monitoring: \(error.localizedDescription)"

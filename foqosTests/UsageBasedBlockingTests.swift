@@ -6,13 +6,14 @@ import XCTest
 final class UsageBasedBlockingTests: XCTestCase {
   func testConfigurationRoundTripsAndClampsAllowance() {
     let encoded = UsageBasedStrategyData.encode(
-      UsageBasedStrategyData(allowanceInMinutes: 75)
+      UsageBasedStrategyData(allowanceInMinutes: 75, enableFiveMinuteWarning: false)
     )
 
     XCTAssertEqual(
       UsageBasedStrategyData.decode(encoded).allowanceInMinutes,
       UsageBasedStrategyData.allowanceRangeInMinutes.upperBound
     )
+    XCTAssertFalse(UsageBasedStrategyData.decode(encoded).enableFiveMinuteWarning)
   }
 
   func testConfigurationUsesDefaultAllowanceWhenMissing() {
@@ -20,6 +21,15 @@ final class UsageBasedBlockingTests: XCTestCase {
       UsageBasedStrategyData.decode(nil).allowanceInMinutes,
       UsageBasedStrategyData.defaultAllowanceInMinutes
     )
+  }
+
+  func testConfigurationDefaultsWarningOnWhenDecodingOlderData() throws {
+    let oldData = Data(#"{"allowanceInMinutes":30}"#.utf8)
+
+    let configuration = UsageBasedStrategyData.decode(oldData)
+
+    XCTAssertEqual(configuration.allowanceInMinutes, 30)
+    XCTAssertTrue(configuration.enableFiveMinuteWarning)
   }
 
   func testHourlyWindowUsesClockHourBoundaries() throws {
@@ -60,13 +70,79 @@ final class UsageBasedBlockingTests: XCTestCase {
     XCTAssertTrue(event.includesPastActivity)
   }
 
-  func testMonitoringStatePersistsItsPeriodAndAllowance() throws {
+  func testWarningEventFiresFiveMinutesBeforeAllowance() {
     let state = makeState(
+      profileId: UUID(),
+      sessionId: UUID().uuidString,
+      windowStart: Date(timeIntervalSince1970: 1_000_000),
+      allowanceInMinutes: 20
+    )
+
+    XCTAssertEqual(
+      UsageBasedActivityScheduler.warningEvent(for: state)?.threshold,
+      DateComponents(minute: 15)
+    )
+  }
+
+  func testWarningIsOnlyMarkedOnceUntilTheNextWindow() {
+    var state = makeState(
+      profileId: UUID(),
+      sessionId: UUID().uuidString,
+      windowStart: Date(timeIntervalSince1970: 1_000_000)
+    )
+
+    XCTAssertTrue(state.markWarningSent())
+    XCTAssertFalse(state.markWarningSent())
+    XCTAssertTrue(state.markAllowanceReached())
+
+    state.beginWindow(at: state.windowStart.addingTimeInterval(60 * 60))
+
+    XCTAssertFalse(state.warningSent)
+    XCTAssertFalse(state.allowanceReached)
+    XCTAssertTrue(state.markWarningSent())
+  }
+
+  func testLateWarningIsSuppressedAfterAllowanceIsReached() {
+    var state = makeState(
+      profileId: UUID(),
+      sessionId: UUID().uuidString,
+      windowStart: Date(timeIntervalSince1970: 1_000_000)
+    )
+
+    XCTAssertTrue(state.markAllowanceReached())
+    XCTAssertFalse(state.markWarningSent())
+  }
+
+  func testAllowanceOfFiveMinutesDoesNotCreateWarningEvent() {
+    let state = makeState(
+      profileId: UUID(),
+      sessionId: UUID().uuidString,
+      windowStart: Date(timeIntervalSince1970: 1_000_000),
+      allowanceInMinutes: 5
+    )
+
+    XCTAssertNil(UsageBasedActivityScheduler.warningEvent(for: state))
+  }
+
+  func testDisabledWarningDoesNotCreateWarningEvent() {
+    let state = makeState(
+      profileId: UUID(),
+      sessionId: UUID().uuidString,
+      windowStart: Date(timeIntervalSince1970: 1_000_000),
+      enableFiveMinuteWarning: false
+    )
+
+    XCTAssertNil(UsageBasedActivityScheduler.warningEvent(for: state))
+  }
+
+  func testMonitoringStatePersistsItsPeriodAndAllowance() throws {
+    var state = makeState(
       profileId: UUID(),
       sessionId: UUID().uuidString,
       windowStart: Date(timeIntervalSince1970: 1_000_000),
       allowanceInMinutes: 35
     )
+    XCTAssertTrue(state.markWarningSent())
 
     let data = try JSONEncoder().encode(state)
     let restoredState = try JSONDecoder().decode(UsageBasedMonitoringState.self, from: data)
@@ -78,7 +154,8 @@ final class UsageBasedBlockingTests: XCTestCase {
     profileId: UUID,
     sessionId: String,
     windowStart: Date,
-    allowanceInMinutes: Int = 20
+    allowanceInMinutes: Int = 20,
+    enableFiveMinuteWarning: Bool = true
   ) -> UsageBasedMonitoringState {
     UsageBasedMonitoringState(
       profileId: profileId,
@@ -87,6 +164,7 @@ final class UsageBasedBlockingTests: XCTestCase {
       categoryTokens: [],
       webDomainTokens: [],
       allowanceInMinutes: allowanceInMinutes,
+      enableFiveMinuteWarning: enableFiveMinuteWarning,
       windowStart: windowStart
     )
   }

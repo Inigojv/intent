@@ -238,6 +238,7 @@
 				Utils/SoftUnblockGrantScheduler.swift,
 				Utils/SoftUnblockGrantStore.swift,
 				Utils/UsageBasedActivityScheduler.swift,
+				Utils/UsageBasedNotificationScheduler.swift,
 			);
 			target = 801713092DE6C78C00B77FE1 /* FoqosDeviceMonitor */;
 		};
