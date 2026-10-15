@@ -56,6 +56,24 @@ final class UsageBasedBlockingTests: XCTestCase {
     XCTAssertNotEqual(firstState.activityName, nextState.activityName)
   }
 
+  func testActivityNameIdentifiesItsOwningSession() {
+    let state = makeState(
+      profileId: UUID(),
+      sessionId: UUID().uuidString,
+      windowStart: Date(timeIntervalSince1970: 1_000_000)
+    )
+
+    XCTAssertEqual(
+      UsageBasedActivityScheduler.sessionId(from: state.activityName),
+      state.sessionId
+    )
+    XCTAssertNil(
+      UsageBasedActivityScheduler.sessionId(
+        from: DeviceActivityName(rawValue: "UsageBasedBlockingActivity:malformed")
+      )
+    )
+  }
+
   func testUsageEventUsesAllowanceAndIncludesPastHourlyActivity() {
     let state = makeState(
       profileId: UUID(),

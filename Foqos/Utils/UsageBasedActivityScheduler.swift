@@ -112,6 +112,17 @@ enum UsageBasedActivityScheduler {
     return state
   }
 
+  static func sessionId(from activity: DeviceActivityName) -> String? {
+    let components = activity.rawValue.split(separator: ":")
+    guard components.count == 4,
+      components[0] == Substring(activityPrefix),
+      UUID(uuidString: String(components[1])) != nil
+    else {
+      return nil
+    }
+    return String(components[2])
+  }
+
   static func start(
     profileId: UUID,
     sessionId: String,
@@ -142,7 +153,7 @@ enum UsageBasedActivityScheduler {
     )
 
     if let previousState = currentState {
-      DeviceActivityCenter().stopMonitoring([previousState.activityName])
+      stop(sessionId: previousState.sessionId)
     }
 
     save(state)
@@ -198,8 +209,7 @@ enum UsageBasedActivityScheduler {
       state.sessionId == sessionId
     else {
       if let previousState = currentState {
-        DeviceActivityCenter().stopMonitoring([previousState.activityName])
-        clear(sessionId: previousState.sessionId)
+        stop(sessionId: previousState.sessionId)
       }
       AppBlockerUtil().deactivateUsageBasedRestrictions()
       try start(
@@ -232,8 +242,11 @@ enum UsageBasedActivityScheduler {
   }
 
   static func stop(sessionId: String) {
-    guard let state = currentState, state.sessionId == sessionId else { return }
-    DeviceActivityCenter().stopMonitoring([state.activityName])
+    let center = DeviceActivityCenter()
+    let activities = center.activities.filter { Self.sessionId(from: $0) == sessionId }
+    if !activities.isEmpty {
+      center.stopMonitoring(activities)
+    }
     clear(sessionId: sessionId)
   }
 
