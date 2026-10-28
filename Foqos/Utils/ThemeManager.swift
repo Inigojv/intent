@@ -27,7 +27,7 @@ class ThemeManager: ObservableObject {
     ("Golden Hour", Color(hex: "#ffb347")),
   ]
 
-  private static let defaultColorName = "Grimace Purple"
+  private static let defaultColorName = "Lime Zest"
 
   @AppStorage(
     "foqosThemeColorName", store: UserDefaults(suiteName: "group.dev.ambitionsoftware.foqos"))
@@ -48,6 +48,7 @@ class ThemeManager: ObservableObject {
 
   static func color(named name: String?) -> Color {
     availableColors.first(where: { $0.name == name })?.color
+      ?? Self.availableColors.first(where: { $0.name == Self.defaultColorName })?.color
       ?? Self.availableColors.first!.color
   }
 
