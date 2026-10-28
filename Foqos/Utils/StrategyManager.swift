@@ -153,6 +153,11 @@ class StrategyManager: ObservableObject {
       return
     }
 
+    guard expiredSession.canResetExpiredCountdown() else {
+      _ = canStopDuringHardMode(expiredSession)
+      return
+    }
+
     let profile = expiredSession.blockedProfile
     let descriptor = FetchDescriptor<BlockedProfileSession>(
       predicate: #Predicate { $0.endTime == nil }
@@ -231,6 +236,7 @@ class StrategyManager: ObservableObject {
       let manualStrategy = getStrategy(id: ManualBlockingStrategy.id, context: context)
 
       if let localActiveSession = getActiveSession(context: context) {
+        guard canStopDuringHardMode(localActiveSession) else { return }
         if localActiveSession.blockedProfile.disableBackgroundStops {
           print(
             "profile: \(localActiveSession.blockedProfile.name) has disable background stops enabled, not stopping it"
@@ -427,6 +433,7 @@ class StrategyManager: ObservableObject {
     _ profileId: UUID,
     context: ModelContext
   ) {
+    errorMessage = nil
     do {
       guard
         let profile = try BlockedProfiles.findProfile(
@@ -465,6 +472,8 @@ class StrategyManager: ObservableObject {
           "profile: \(profile.name) has disable background stops enabled, not stopping it"
         return
       }
+
+      guard canStopDuringHardMode(localActiveSession) else { return }
 
       let _ = manualStrategy.stopBlocking(
         context: context,
@@ -847,6 +856,11 @@ class StrategyManager: ObservableObject {
       return
     }
 
+    if session.isSessionActionLockedByHardMode() {
+      _ = canStopDuringHardMode(session)
+      return
+    }
+
     if let strategyId = session.blockedProfile.blockingStrategyId {
       let strategy = getStrategy(id: strategyId, context: context)
       let view = strategy.stopBlocking(context: context, session: session)
@@ -858,6 +872,15 @@ class StrategyManager: ObservableObject {
         )
       }
     }
+  }
+
+  private func canStopDuringHardMode(_ session: BlockedProfileSession) -> Bool {
+    guard session.isStopLockedByHardMode(), let unlockTime = session.hardModeUnlockTime else {
+      return true
+    }
+    errorMessage =
+      "You can stop this session at \(unlockTime.formatted(date: .omitted, time: .shortened))."
+    return false
   }
 
   private func scheduleReminder(profile: BlockedProfiles) {
