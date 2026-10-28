@@ -134,6 +134,12 @@ enum UsageBasedActivityScheduler {
     at date: Date = Date(),
     calendar: Calendar = .current
   ) throws {
+    guard
+      !applicationTokens.isEmpty || !categoryTokens.isEmpty || !webDomainTokens.isEmpty
+    else {
+      throw UsageBasedActivityError.noSelectedActivities
+    }
+
     guard let window = hourlyWindow(containing: date, calendar: calendar) else {
       throw UsageBasedActivityError.invalidHourlyWindow
     }
@@ -350,4 +356,5 @@ enum UsageBasedActivityScheduler {
 
 enum UsageBasedActivityError: Error {
   case invalidHourlyWindow
+  case noSelectedActivities
 }

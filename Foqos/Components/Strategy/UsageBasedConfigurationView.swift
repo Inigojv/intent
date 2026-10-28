@@ -71,6 +71,9 @@ struct UsageBasedConfigurationView: View {
           backgroundColor: themeManager.themeColor,
           iconName: "checkmark.circle.fill"
         ) {
+          if enableFiveMinuteWarning && allowanceInMinutes > 5 {
+            UsageBasedNotificationScheduler.requestAuthorization()
+          }
           onSave(
             UsageBasedStrategyData(
               allowanceInMinutes: allowanceInMinutes,

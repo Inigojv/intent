@@ -61,6 +61,9 @@ class ScheduleTimerActivity: TimerActivity {
         log.info(
           "Start schedule timer activity for \(profileId), existing session profile matches device activity profile, continuing active session"
         )
+        if profile.blockingStrategyId == UsageBasedBlockingStrategy.id {
+          reconcileUsageBasedMonitoring(for: profile, sessionId: existingSession.id)
+        }
         return
       } else {
         log.info(
@@ -79,8 +82,7 @@ class ScheduleTimerActivity: TimerActivity {
       )
     )
 
-    // Start restrictions
-    appBlocker.activateRestrictions(for: profile)
+    startRestrictions(for: profile, session: session)
   }
 
   func stop(for profile: SharedData.ProfileSnapshot) {
@@ -109,8 +111,9 @@ class ScheduleTimerActivity: TimerActivity {
       )
     )
 
-    // End restrictions
-    appBlocker.deactivateRestrictions()
+    if profile.blockingStrategyId != UsageBasedBlockingStrategy.id {
+      appBlocker.deactivateRestrictions()
+    }
 
     // End the active scheduled session
     SharedData.endActiveSharedSession()
@@ -122,5 +125,62 @@ class ScheduleTimerActivity: TimerActivity {
     let intervalStart = DateComponents(hour: schedule.startHour, minute: schedule.startMinute)
     let intervalEnd = DateComponents(hour: schedule.endHour, minute: schedule.endMinute)
     return (intervalStart: intervalStart, intervalEnd: intervalEnd)
+  }
+
+  private func startRestrictions(
+    for profile: SharedData.ProfileSnapshot,
+    session: SharedData.SessionSnapshot
+  ) {
+    guard profile.blockingStrategyId == UsageBasedBlockingStrategy.id else {
+      appBlocker.activateRestrictions(for: profile)
+      return
+    }
+
+    appBlocker.deactivateRestrictions()
+    do {
+      try startUsageBasedMonitoring(for: profile, sessionId: session.id)
+    } catch {
+      log.error("Failed to start scheduled usage monitoring: \(error.localizedDescription)")
+      BlockingSessionLifecycleRegistry.sessionDidEnd(
+        BlockingSessionLifecycleContext(profile: profile, session: session)
+      )
+      SharedData.endActiveSharedSession()
+    }
+  }
+
+  private func reconcileUsageBasedMonitoring(
+    for profile: SharedData.ProfileSnapshot,
+    sessionId: String
+  ) {
+    let configuration = UsageBasedStrategyData.decode(profile.strategyData)
+    do {
+      try UsageBasedActivityScheduler.reconcile(
+        profileId: profile.id,
+        sessionId: sessionId,
+        applicationTokens: profile.selectedActivity.applicationTokens,
+        categoryTokens: profile.selectedActivity.categoryTokens,
+        webDomainTokens: profile.selectedActivity.webDomainTokens,
+        allowanceInMinutes: configuration.allowanceInMinutes,
+        enableFiveMinuteWarning: configuration.enableFiveMinuteWarning
+      )
+    } catch {
+      log.error("Failed to resume scheduled usage monitoring: \(error.localizedDescription)")
+    }
+  }
+
+  private func startUsageBasedMonitoring(
+    for profile: SharedData.ProfileSnapshot,
+    sessionId: String
+  ) throws {
+    let configuration = UsageBasedStrategyData.decode(profile.strategyData)
+    try UsageBasedActivityScheduler.start(
+      profileId: profile.id,
+      sessionId: sessionId,
+      applicationTokens: profile.selectedActivity.applicationTokens,
+      categoryTokens: profile.selectedActivity.categoryTokens,
+      webDomainTokens: profile.selectedActivity.webDomainTokens,
+      allowanceInMinutes: configuration.allowanceInMinutes,
+      enableFiveMinuteWarning: configuration.enableFiveMinuteWarning
+    )
   }
 }

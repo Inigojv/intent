@@ -45,6 +45,19 @@ final class UsageBasedBlockingTests: XCTestCase {
     XCTAssertEqual(window.end, ISO8601DateFormatter().date(from: "2026-10-15T15:00:00Z"))
   }
 
+  func testScheduledMonitoringRejectsAnEmptySelection() {
+    XCTAssertThrowsError(
+      try UsageBasedActivityScheduler.start(
+        profileId: UUID(),
+        sessionId: UUID().uuidString,
+        applicationTokens: [],
+        categoryTokens: [],
+        webDomainTokens: [],
+        allowanceInMinutes: 20
+      )
+    )
+  }
+
   func testActivityNameChangesForEachClockHour() {
     let profileId = UUID()
     let sessionId = UUID().uuidString
