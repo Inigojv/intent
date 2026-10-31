@@ -2,23 +2,29 @@ import Foundation
 
 struct UsageBasedStrategyData: Codable, Equatable {
   static let defaultAllowanceInMinutes = 20
+  static let defaultDisableCountdownInSeconds = 5
   static let defaultFiveMinuteWarningEnabled = true
-  static let allowanceRangeInMinutes = 1...59
+  static let allowanceRangeInMinutes = 5...60
+  static let disableCountdownRangeInSeconds = 5...60
 
   var allowanceInMinutes: Int
   var enableFiveMinuteWarning: Bool
+  var disableCountdownInSeconds: Int
 
   init(
     allowanceInMinutes: Int,
-    enableFiveMinuteWarning: Bool = defaultFiveMinuteWarningEnabled
+    enableFiveMinuteWarning: Bool = defaultFiveMinuteWarningEnabled,
+    disableCountdownInSeconds: Int = defaultDisableCountdownInSeconds
   ) {
     self.allowanceInMinutes = allowanceInMinutes
     self.enableFiveMinuteWarning = enableFiveMinuteWarning
+    self.disableCountdownInSeconds = disableCountdownInSeconds
   }
 
   private enum CodingKeys: String, CodingKey {
     case allowanceInMinutes
     case enableFiveMinuteWarning
+    case disableCountdownInSeconds
   }
 
   init(from decoder: Decoder) throws {
@@ -28,6 +34,10 @@ struct UsageBasedStrategyData: Codable, Equatable {
       Bool.self,
       forKey: .enableFiveMinuteWarning
     ) ?? Self.defaultFiveMinuteWarningEnabled
+    disableCountdownInSeconds = try container.decodeIfPresent(
+      Int.self,
+      forKey: .disableCountdownInSeconds
+    ) ?? Self.defaultDisableCountdownInSeconds
   }
 
   static func decode(_ data: Data?) -> UsageBasedStrategyData {
@@ -45,12 +55,25 @@ struct UsageBasedStrategyData: Codable, Equatable {
   }
 
   private var normalized: UsageBasedStrategyData {
-    UsageBasedStrategyData(
-      allowanceInMinutes: min(
-        max(allowanceInMinutes, Self.allowanceRangeInMinutes.lowerBound),
-        Self.allowanceRangeInMinutes.upperBound
-      ),
-      enableFiveMinuteWarning: enableFiveMinuteWarning
+    let clamped = min(
+      max(allowanceInMinutes, Self.allowanceRangeInMinutes.lowerBound),
+      Self.allowanceRangeInMinutes.upperBound
+    )
+    let rounded = Int((Double(clamped) / 5.0).rounded(.toNearestOrAwayFromZero) * 5.0)
+    let normalizedValue = min(
+      max(rounded, Self.allowanceRangeInMinutes.lowerBound),
+      Self.allowanceRangeInMinutes.upperBound
+    )
+
+    let clampedCountdown = min(
+      max(disableCountdownInSeconds, Self.disableCountdownRangeInSeconds.lowerBound),
+      Self.disableCountdownRangeInSeconds.upperBound
+    )
+
+    return UsageBasedStrategyData(
+      allowanceInMinutes: normalizedValue,
+      enableFiveMinuteWarning: enableFiveMinuteWarning,
+      disableCountdownInSeconds: clampedCountdown
     )
   }
 }

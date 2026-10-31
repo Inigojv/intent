@@ -13,6 +13,7 @@ final class UsageBasedBlockingStrategy: BlockingStrategy {
   var startsManually = true
   var allowsTimedBreaks = false
   var supportsAllowMode = false
+  var startViewPresentationDetents: Set<PresentationDetent> = [.large]
 
   var onSessionCreation: ((SessionStatus) -> Void)?
   var onErrorMessage: ((String) -> Void)?

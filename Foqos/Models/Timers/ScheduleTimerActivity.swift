@@ -6,6 +6,7 @@ private let log: Logger = Logger(subsystem: "com.foqos.monitor", category: Sched
 
 class ScheduleTimerActivity: TimerActivity {
   static var id: String = "ScheduleTimerActivity"
+  private static let usageBasedBlockingStrategyId = "UsageBasedBlockingStrategy"
 
   // Device Activity callbacks can overlap on different handler instances.
   private static let transitionLock = NSLock()
@@ -61,7 +62,7 @@ class ScheduleTimerActivity: TimerActivity {
         log.info(
           "Start schedule timer activity for \(profileId), existing session profile matches device activity profile, continuing active session"
         )
-        if profile.blockingStrategyId == UsageBasedBlockingStrategy.id {
+        if profile.blockingStrategyId == Self.usageBasedBlockingStrategyId {
           reconcileUsageBasedMonitoring(for: profile, sessionId: existingSession.id)
         }
         return
@@ -111,7 +112,7 @@ class ScheduleTimerActivity: TimerActivity {
       )
     )
 
-    if profile.blockingStrategyId != UsageBasedBlockingStrategy.id {
+    if profile.blockingStrategyId != Self.usageBasedBlockingStrategyId {
       appBlocker.deactivateRestrictions()
     }
 
@@ -131,7 +132,7 @@ class ScheduleTimerActivity: TimerActivity {
     for profile: SharedData.ProfileSnapshot,
     session: SharedData.SessionSnapshot
   ) {
-    guard profile.blockingStrategyId == UsageBasedBlockingStrategy.id else {
+    guard profile.blockingStrategyId == Self.usageBasedBlockingStrategyId else {
       appBlocker.activateRestrictions(for: profile)
       return
     }

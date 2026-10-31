@@ -15,6 +15,7 @@ struct ActiveProfileSessionView: View {
   let isBreakActive: Bool
   let isPauseActive: Bool
   let isCountdownExpired: Bool
+  let stopCountdownRemaining: Int?
   let onBreakTapped: () -> Void
   let onStopTapped: () -> Void
   let onExpiredCountdownReset: () -> Void
@@ -37,6 +38,17 @@ struct ActiveProfileSessionView: View {
 
   private var stopButtonAction: BlockingStrategySessionAction {
     blockingStrategy?.activeSessionAction(isPauseActive: isPauseActive) ?? .stop()
+  }
+
+  private var stopButtonTitle: String {
+    guard profile.blockingStrategyId == UsageBasedBlockingStrategy.id,
+      let remaining = stopCountdownRemaining,
+      remaining > 0
+    else {
+      return stopButtonAction.title
+    }
+
+    return "Stop (\(remaining)s)"
   }
 
   private var activeSession: BlockedProfileSession? {
@@ -366,11 +378,11 @@ struct ActiveProfileSessionView: View {
 
             if showStopButton {
               ActiveSessionActionButton(
-                title: stopButtonAction.title,
+                title: stopButtonTitle,
                 iconName: stopButtonAction.systemImageName,
                 imageName: stopButtonAction.assetImageName,
                 role: .standard,
-                action: onStopTapped
+                action: stopCountdownRemaining == nil ? onStopTapped : {}
               )
             }
           }
@@ -801,6 +813,7 @@ private struct ActiveSessionPressStyle: ButtonStyle {
     isBreakActive: false,
     isPauseActive: false,
     isCountdownExpired: false,
+    stopCountdownRemaining: nil,
     onBreakTapped: {},
     onStopTapped: {},
     onExpiredCountdownReset: {}
@@ -826,6 +839,7 @@ private struct ActiveSessionPressStyle: ButtonStyle {
     isBreakActive: false,
     isPauseActive: false,
     isCountdownExpired: false,
+    stopCountdownRemaining: nil,
     onBreakTapped: {},
     onStopTapped: {},
     onExpiredCountdownReset: {}
@@ -863,6 +877,7 @@ private struct ActiveSessionPressStyle: ButtonStyle {
     isBreakActive: false,
     isPauseActive: false,
     isCountdownExpired: false,
+    stopCountdownRemaining: nil,
     onBreakTapped: {},
     onStopTapped: {},
     onExpiredCountdownReset: {}

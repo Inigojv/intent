@@ -62,9 +62,11 @@ enum BlockingSessionLifecycleRegistry {
 }
 
 struct UsageBasedBlockingSessionLifecycleHandler: BlockingSessionLifecycleHandler {
+  private static let strategyId = "UsageBasedBlockingStrategy"
+
   func sessionDidStart(_ context: BlockingSessionLifecycleContext) {
     guard
-      context.strategyId == UsageBasedBlockingStrategy.id,
+      context.strategyId == Self.strategyId,
       UsageBasedActivityScheduler.currentState?.sessionId == context.sessionId
     else {
       if let state = UsageBasedActivityScheduler.currentState {
@@ -77,7 +79,7 @@ struct UsageBasedBlockingSessionLifecycleHandler: BlockingSessionLifecycleHandle
 
   func sessionDidEnd(_ context: BlockingSessionLifecycleContext) {
     guard let state = UsageBasedActivityScheduler.currentState else {
-      guard context.strategyId == UsageBasedBlockingStrategy.id else { return }
+      guard context.strategyId == Self.strategyId else { return }
       UsageBasedActivityScheduler.stop(sessionId: context.sessionId)
       AppBlockerUtil().deactivateUsageBasedRestrictions()
       return

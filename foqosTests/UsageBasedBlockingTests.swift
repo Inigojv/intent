@@ -16,6 +16,23 @@ final class UsageBasedBlockingTests: XCTestCase {
     XCTAssertFalse(UsageBasedStrategyData.decode(encoded).enableFiveMinuteWarning)
   }
 
+  func testConfigurationRoundsAllowanceToFiveMinuteSteps() {
+    let encoded = UsageBasedStrategyData.encode(
+      UsageBasedStrategyData(allowanceInMinutes: 7, enableFiveMinuteWarning: false)
+    )
+
+    XCTAssertEqual(UsageBasedStrategyData.decode(encoded).allowanceInMinutes, 10)
+
+    let encodedHigh = UsageBasedStrategyData.encode(
+      UsageBasedStrategyData(allowanceInMinutes: 58, enableFiveMinuteWarning: false)
+    )
+
+    XCTAssertEqual(
+      UsageBasedStrategyData.decode(encodedHigh).allowanceInMinutes,
+      UsageBasedStrategyData.allowanceRangeInMinutes.upperBound
+    )
+  }
+
   func testConfigurationUsesDefaultAllowanceWhenMissing() {
     XCTAssertEqual(
       UsageBasedStrategyData.decode(nil).allowanceInMinutes,

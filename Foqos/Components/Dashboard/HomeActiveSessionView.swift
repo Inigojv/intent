@@ -17,6 +17,7 @@ struct HomeActiveSessionView: View {
         isBreakActive: strategyManager.isBreakActive,
         isPauseActive: strategyManager.isPauseActive,
         isCountdownExpired: strategyManager.isCountdownExpired,
+        stopCountdownRemaining: strategyManager.stopCountdownRemaining,
         onBreakTapped: toggleBreak,
         onStopTapped: { onStopProfile(profile) },
         onExpiredCountdownReset: resetExpiredCountdown

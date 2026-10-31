@@ -25,6 +25,7 @@ class StrategyManager: ObservableObject {
   @Published var sessionDisplayTime: TimeInterval = 0
   @Published var timer: Timer?
   @Published var activeSession: BlockedProfileSession?
+  @Published var stopCountdownRemaining: Int?
 
   @Published var showCustomStrategyView: Bool = false
   @Published var customStrategyView: (any View)? = nil
@@ -44,6 +45,7 @@ class StrategyManager: ObservableObject {
 
   private let timersUtil = TimersUtil()
   private let appBlocker = AppBlockerUtil()
+  private var stopCountdownTimer: Timer?
 
   var isBlocking: Bool {
     return activeSession?.isActive == true
@@ -127,6 +129,16 @@ class StrategyManager: ObservableObject {
 
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     if isBlocking {
+      guard let activeProfile else {
+        stopBlocking(context: context)
+        return
+      }
+
+      if activeProfile.blockingStrategyId == UsageBasedBlockingStrategy.id {
+        beginUsageBasedStopCountdown(context: context, profile: activeProfile)
+        return
+      }
+
       stopBlocking(context: context)
     } else {
       startBlocking(context: context, activeProfile: activeProfile)
@@ -740,6 +752,9 @@ class StrategyManager: ObservableObject {
     profile: BlockedProfiles,
     shouldScheduleReminder: Bool = true
   ) {
+    stopCountdownTimer?.invalidate()
+    stopCountdownTimer = nil
+    stopCountdownRemaining = nil
     self.dismissView()
 
     // Remove any timers and notifications that were scheduled
@@ -849,6 +864,10 @@ class StrategyManager: ObservableObject {
   }
 
   private func stopBlocking(context: ModelContext) {
+    stopCountdownTimer?.invalidate()
+    stopCountdownTimer = nil
+    stopCountdownRemaining = nil
+
     guard let session = activeSession else {
       print(
         "No active session found, calling stop blocking with no session"
@@ -870,6 +889,35 @@ class StrategyManager: ObservableObject {
           customView,
           presentationDetents: [.medium, .large]
         )
+      }
+    }
+  }
+
+  private func beginUsageBasedStopCountdown(context: ModelContext, profile: BlockedProfiles) {
+    guard profile.blockingStrategyId == UsageBasedBlockingStrategy.id else {
+      stopBlocking(context: context)
+      return
+    }
+
+    guard stopCountdownRemaining == nil else { return }
+
+    let remainingSeconds = UsageBasedStrategyData.decode(profile.strategyData)
+      .disableCountdownInSeconds
+    let countdownDuration = max(5, min(60, remainingSeconds))
+    let deadline = Date().addingTimeInterval(Double(countdownDuration))
+
+    stopCountdownRemaining = countdownDuration
+    stopCountdownTimer?.invalidate()
+    stopCountdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+      guard let self else { return }
+      let remaining = max(0, Int(deadline.timeIntervalSinceNow.rounded(.up)))
+      self.stopCountdownRemaining = remaining
+
+      if remaining <= 0 {
+        self.stopCountdownTimer?.invalidate()
+        self.stopCountdownTimer = nil
+        self.stopCountdownRemaining = nil
+        self.stopBlocking(context: context)
       }
     }
   }

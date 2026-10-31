@@ -41,9 +41,9 @@ enum StrategyStartSettingsKind: String, Identifiable {
 
   var presentationDetents: Set<PresentationDetent> {
     switch self {
-    case .temporaryAccess:
+    case .temporaryAccess, .usageBased:
       return [.large]
-    case .timer, .pauseTimer, .usageBased:
+    case .timer, .pauseTimer:
       return [.medium, .large]
     }
   }
