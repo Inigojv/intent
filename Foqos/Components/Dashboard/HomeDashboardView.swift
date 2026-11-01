@@ -14,6 +14,8 @@ struct HomeDashboardView: View {
   let onAdvancedCreationTapped: () -> Void
   let onInsightsTapped: (DashboardInsightsContext) -> Void
   let onManageProfilesTapped: () -> Void
+  let onManageUsageBasedTapped: () -> Void
+  let onManageOnDemandTapped: () -> Void
   let onStartProfile: (BlockedProfiles) -> Void
   let onStopProfile: (BlockedProfiles) -> Void
   let onEditProfile: (BlockedProfiles) -> Void
@@ -27,6 +29,16 @@ struct HomeDashboardView: View {
 
   private var selectedProfile: BlockedProfiles? {
     profiles.first { $0.id == selectedProfileId } ?? profiles.first
+  }
+
+  private var bottomActiveProfile: BlockedProfiles? {
+    guard let activeSessionProfile = strategyManager.activeSession?.blockedProfile else {
+      return nil
+    }
+
+    return activeSessionProfile.blockingStrategyId == UsageBasedBlockingStrategy.id
+      ? nil
+      : activeSessionProfile
   }
 
   var body: some View {
@@ -57,31 +69,41 @@ struct HomeDashboardView: View {
             onAdvancedTap: createAdvancedProfile
           )
           .padding(.horizontal, 16)
+        } else if !showsProfileInsights {
+          HomeProfilesByStrategyListView(
+            profiles: profiles,
+            isBlocking: strategyManager.isBlocking,
+            activeSessionProfileId: strategyManager.activeSession?.blockedProfile.id,
+            elapsedTime: strategyManager.elapsedTime,
+            isPauseActive: strategyManager.isPauseActive,
+            stopCountdownRemaining: strategyManager.stopCountdownRemaining,
+            isHardModeActionLocked:
+              strategyManager.activeSession?.isSessionActionLockedByHardMode() ?? false,
+            onManageUsageBasedTapped: onManageUsageBasedTapped,
+            onManageOnDemandTapped: onManageOnDemandTapped,
+            onStartTapped: onStartProfile,
+            onStopTapped: onStopProfile,
+            onEditTapped: onEditProfile,
+            onStatsTapped: onProfileInsightsTapped
+          )
+          .padding(.horizontal, 16)
         } else {
-          if !showsProfileInsights {
-            BlockedSessionsHabitTracker(
-              sessions: sessions,
-              profiles: profiles,
-              onInsightsTapped: onInsightsTapped
-            )
-            .padding(.horizontal, 16)
-          }
-
           HomeProfilesListView(
             profiles: profiles,
             isBlocking: strategyManager.isBlocking,
             activeSessionProfileId: strategyManager.activeSession?.blockedProfile.id,
             elapsedTime: strategyManager.elapsedTime,
             isPauseActive: strategyManager.isPauseActive,
+            stopCountdownRemaining: strategyManager.stopCountdownRemaining,
             isHardModeActionLocked:
               strategyManager.activeSession?.isSessionActionLockedByHardMode() ?? false,
             onManageTapped: onManageProfilesTapped,
             onStartTapped: onStartProfile,
             onStopTapped: onStopProfile,
             onEditTapped: onEditProfile,
-            onStatsTapped: showsProfileInsights ? selectProfile : onProfileInsightsTapped,
-            selectedProfileId: showsProfileInsights ? selectedProfile?.id : nil,
-            onSelectProfile: showsProfileInsights ? selectProfile : nil
+            onStatsTapped: selectProfile,
+            selectedProfileId: selectedProfile?.id,
+            onSelectProfile: selectProfile
           )
           .padding(.horizontal, 16)
         }
@@ -90,8 +112,7 @@ struct HomeDashboardView: View {
     .safeAreaInset(edge: .bottom) {
       if !profiles.isEmpty {
         HomeProfileLauncher(
-          activeProfile: strategyManager.isBlocking
-            ? strategyManager.activeSession?.blockedProfile : nil,
+          activeProfile: strategyManager.isBlocking ? bottomActiveProfile : nil,
           displayTime: strategyManager.sessionDisplayTime,
           isBreakActive: strategyManager.isBreakActive,
           isPauseActive: strategyManager.isPauseActive,
@@ -176,6 +197,8 @@ private struct HomeDashboardPreview: View {
       onAdvancedCreationTapped: {},
       onInsightsTapped: { _ in },
       onManageProfilesTapped: {},
+      onManageUsageBasedTapped: {},
+      onManageOnDemandTapped: {},
       onStartProfile: { _ in },
       onStopProfile: { _ in },
       onEditProfile: { _ in },

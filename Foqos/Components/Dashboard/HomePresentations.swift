@@ -17,8 +17,15 @@ struct HomePresentations: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      .sheet(isPresented: $presentation.isProfileListPresent) {
-        BlockedProfileListView()
+      .sheet(isPresented: $presentation.showOnDemandProfileList, onDismiss: {
+        presentation.profileListScope = nil
+      }) {
+        BlockedProfileListView(listType: .onDemand)
+      }
+      .sheet(isPresented: $presentation.showUsageBasedProfileList, onDismiss: {
+        presentation.profileListScope = nil
+      }) {
+        BlockedProfileListView(listType: .usageBased)
       }
       .sheet(item: $alertsManager.selectedAlert) { alert in
         HomeAlertDetailView(
@@ -53,8 +60,15 @@ struct HomePresentations: ViewModifier {
       }
       .sheet(
         isPresented: $presentation.showNewProfileView,
+        onDismiss: {
+          presentation.profileCreationScope = nil
+        }
       ) {
-        BlockedProfileView(profile: nil)
+        BlockedProfileView(
+          profile: nil,
+          preferredStrategyId: presentation.newProfilePreferredStrategyId,
+          allowedStrategyIds: presentation.newProfileAllowedStrategyIds
+        )
       }
       .sheet(
         isPresented: $presentation.showGuidedProfileCreationView,

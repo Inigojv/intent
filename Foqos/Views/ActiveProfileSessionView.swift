@@ -16,8 +16,10 @@ struct ActiveProfileSessionView: View {
   let isPauseActive: Bool
   let isCountdownExpired: Bool
   let stopCountdownRemaining: Int?
+  let extraTimeCooldownRemaining: Int?
   let onBreakTapped: () -> Void
   let onStopTapped: () -> Void
+  let onExtraTimeTapped: () -> Void
   let onExpiredCountdownReset: () -> Void
 
   @State private var showEmergencyView = false
@@ -41,8 +43,7 @@ struct ActiveProfileSessionView: View {
   }
 
   private var stopButtonTitle: String {
-    guard profile.blockingStrategyId == UsageBasedBlockingStrategy.id,
-      let remaining = stopCountdownRemaining,
+    guard let remaining = stopCountdownRemaining,
       remaining > 0
     else {
       return stopButtonAction.title
@@ -64,6 +65,26 @@ struct ActiveProfileSessionView: View {
 
   private var breakButtonTitle: String {
     "Hold to " + (isBreakActive ? "Stop Break" : "Start Break")
+  }
+
+  private var shouldShowExtraTimeButton: Bool {
+    guard profile.blockingStrategyId == UsageBasedBlockingStrategy.id else {
+      return false
+    }
+
+    guard let state = UsageBasedActivityScheduler.allStates.first(where: { $0.profileId == profile.id })
+    else {
+      return false
+    }
+
+    return state.allowanceReached
+  }
+
+  private var extraTimeButtonTitle: String {
+    guard let remaining = extraTimeCooldownRemaining, remaining > 0 else {
+      return "Extra time"
+    }
+    return "Extra time (\(remaining)s)"
   }
 
   private var focusMessage: String {
@@ -218,6 +239,9 @@ struct ActiveProfileSessionView: View {
   #endif
 
   private var statusMessage: String? {
+    if let remaining = stopCountdownRemaining, remaining > 0, isPauseActive {
+      return "Disabling in \(remaining)s"
+    }
     if isPauseActive {
       return "Paused"
     }
@@ -227,12 +251,15 @@ struct ActiveProfileSessionView: View {
     return nil
   }
 
-  private var statusIconName: String? {
+  private var statusIconSystemName: String? {
+    if let remaining = stopCountdownRemaining, remaining > 0, isPauseActive {
+      return "timer"
+    }
     if isPauseActive {
-      return "PauseStickerIcon"
+      return "pause.fill"
     }
     if isBreakActive {
-      return "CoffeeStickerIcon"
+      return "cup.and.saucer.fill"
     }
     return nil
   }
@@ -302,9 +329,9 @@ struct ActiveProfileSessionView: View {
             .foregroundStyle(.secondary)
         }
 
-        if let statusMessage, let statusIconName {
+        if let statusMessage, let statusIconSystemName {
           HStack(spacing: 5) {
-            Image(statusIconName)
+            Image(systemName: statusIconSystemName)
               .resizable()
               .scaledToFit()
               .frame(width: 16, height: 16)
@@ -360,6 +387,15 @@ struct ActiveProfileSessionView: View {
             role: isBreakActive ? .warning : .standard,
             requiresLongPress: true,
             action: onBreakTapped
+          )
+        }
+
+        if shouldShowExtraTimeButton {
+          ActiveSessionActionButton(
+            title: extraTimeButtonTitle,
+            iconName: "clock.arrow.circlepath",
+            role: .standard,
+            action: extraTimeCooldownRemaining == nil ? onExtraTimeTapped : {}
           )
         }
 
@@ -814,8 +850,10 @@ private struct ActiveSessionPressStyle: ButtonStyle {
     isPauseActive: false,
     isCountdownExpired: false,
     stopCountdownRemaining: nil,
+    extraTimeCooldownRemaining: nil,
     onBreakTapped: {},
     onStopTapped: {},
+    onExtraTimeTapped: {},
     onExpiredCountdownReset: {}
   )
   .environmentObject(StrategyManager())
@@ -840,8 +878,10 @@ private struct ActiveSessionPressStyle: ButtonStyle {
     isPauseActive: false,
     isCountdownExpired: false,
     stopCountdownRemaining: nil,
+    extraTimeCooldownRemaining: nil,
     onBreakTapped: {},
     onStopTapped: {},
+    onExtraTimeTapped: {},
     onExpiredCountdownReset: {}
   )
   .environment(
@@ -878,8 +918,10 @@ private struct ActiveSessionPressStyle: ButtonStyle {
     isPauseActive: false,
     isCountdownExpired: false,
     stopCountdownRemaining: nil,
+    extraTimeCooldownRemaining: nil,
     onBreakTapped: {},
     onStopTapped: {},
+    onExtraTimeTapped: {},
     onExpiredCountdownReset: {}
   )
   .environment(

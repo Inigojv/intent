@@ -53,9 +53,23 @@ struct HomeView: View {
       onSettingsTapped: { presentation.showSettingsView = true },
       onAlertTapped: presentAlert,
       onGuidedCreationTapped: { presentation.showGuidedProfileCreationView = true },
-      onAdvancedCreationTapped: { presentation.showNewProfileView = true },
+      onAdvancedCreationTapped: {
+        presentation.profileCreationScope = .onDemand
+        presentation.showNewProfileView = true
+      },
       onInsightsTapped: { presentation.dashboardInsightsContext = $0 },
-      onManageProfilesTapped: { presentation.isProfileListPresent = true },
+      onManageProfilesTapped: {
+        presentation.profileListScope = .onDemand
+        presentation.showOnDemandProfileList = true
+      },
+      onManageUsageBasedTapped: {
+        presentation.profileListScope = .usageBased
+        presentation.showUsageBasedProfileList = true
+      },
+      onManageOnDemandTapped: {
+        presentation.profileListScope = .onDemand
+        presentation.showOnDemandProfileList = true
+      },
       onStartProfile: startProfile,
       onStopProfile: strategyButtonPress,
       onEditProfile: { presentation.profileToEdit = $0 },

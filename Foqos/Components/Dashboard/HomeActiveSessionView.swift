@@ -18,8 +18,10 @@ struct HomeActiveSessionView: View {
         isPauseActive: strategyManager.isPauseActive,
         isCountdownExpired: strategyManager.isCountdownExpired,
         stopCountdownRemaining: strategyManager.stopCountdownRemaining,
+        extraTimeCooldownRemaining: strategyManager.extraTimeCooldownRemaining,
         onBreakTapped: toggleBreak,
         onStopTapped: { onStopProfile(profile) },
+        onExtraTimeTapped: { strategyManager.grantExtraTime(context: context) },
         onExpiredCountdownReset: resetExpiredCountdown
       )
     }
