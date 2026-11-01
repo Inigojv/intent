@@ -18,10 +18,10 @@ final class BlockedProfileDraft: ObservableObject {
   @Published var enableAllowModeDomain: Bool
   @Published var enableSafariBlocking: Bool
   @Published var enableAdultContentBlocking: Bool
-  @Published var enableMacSync: Bool
   @Published var disableBackgroundStops: Bool
   @Published var enableHardMode: Bool
   @Published var hardModeDurationInMinutes: Int
+  @Published var stopDelayInSeconds: Int
   @Published var enableEmergencyUnblock: Bool
   @Published var domains: [String]
   @Published var physicalUnblockItems: [PhysicalUnblockItem]
@@ -34,7 +34,9 @@ final class BlockedProfileDraft: ObservableObject {
       let oldSettingsKind = StrategyStartSettingsKind(strategy: oldValue)
       let newSettingsKind = StrategyStartSettingsKind(strategy: selectedStrategy)
 
-      if newSettingsKind == nil || oldSettingsKind != newSettingsKind {
+      if selectedStrategy?.getIdentifier() == UsageBasedBlockingStrategy.id {
+        askForStartSettings = false
+      } else if newSettingsKind == nil || oldSettingsKind != newSettingsKind {
         strategyData = nil
         askForStartSettings = true
       }
@@ -43,9 +45,7 @@ final class BlockedProfileDraft: ObservableObject {
     }
   }
 
-  init(profile: BlockedProfiles? = nil) {
-    let isMacSyncEnabled = profile?.enableMacSync ?? false
-
+  init(profile: BlockedProfiles? = nil, preferredStrategyId: String? = nil) {
     name = profile?.name ?? ""
     selectedActivity = profile?.selectedActivity ?? FamilyActivitySelection()
     enableLiveActivity = profile?.enableLiveActivity ?? false
@@ -55,16 +55,15 @@ final class BlockedProfileDraft: ObservableObject {
     enableStrictMode = profile?.enableStrictMode ?? false
     enableBlockAppInstallation = profile?.enableBlockAppInstallation ?? false
     enableAllowMode = profile?.enableAllowMode ?? false
-    enableMacSync = isMacSyncEnabled
-    enableAllowModeDomain = isMacSyncEnabled ? false : profile?.enableAllowModeDomains ?? false
+    enableAllowModeDomain = profile?.enableAllowModeDomains ?? false
     enableSafariBlocking = profile?.enableSafariBlocking ?? true
-    enableAdultContentBlocking =
-      isMacSyncEnabled ? false : profile?.enableAdultContentBlocking ?? false
+    enableAdultContentBlocking = profile?.enableAdultContentBlocking ?? false
     enableReminder = profile?.reminderTimeInSeconds != nil
     disableBackgroundStops = profile?.disableBackgroundStops ?? false
     enableEmergencyUnblock = profile?.enableEmergencyUnblock ?? true
     enableHardMode = profile?.enableHardMode ?? false
     hardModeDurationInMinutes = profile?.hardModeDurationInMinutes ?? 30
+    stopDelayInSeconds = max(0, min(60, profile?.stopDelayInSeconds ?? 0))
     reminderTimeInMinutes = Int(profile?.reminderTimeInSeconds ?? 900) / 60
     customReminderMessage = profile?.customReminderMessage ?? ""
     domains = profile?.domains ?? []
@@ -84,13 +83,28 @@ final class BlockedProfileDraft: ObservableObject {
 
     if let profileStrategyId = profile?.blockingStrategyId {
       selectedStrategy = StrategyManager.getStrategyFromId(id: profileStrategyId)
+    } else if let preferredStrategyId,
+      let preferredStrategy = StrategyManager.availableStrategies.first(
+        where: { $0.getIdentifier() == preferredStrategyId }
+      )
+    {
+      selectedStrategy = preferredStrategy
+    } else if let fallbackStrategy = StrategyManager.nonUsageBasedStrategies.first {
+      selectedStrategy = fallbackStrategy
     } else {
       selectedStrategy = NFCBlockingStrategy()
     }
 
+    if selectedStrategy?.getIdentifier() == UsageBasedBlockingStrategy.id {
+      askForStartSettings = false
+    }
+
     // Restore persisted settings after the strategy observer has handled initial selection.
     strategyData = profile?.strategyData
-    askForStartSettings = profile?.askForStartSettings ?? true
+    askForStartSettings =
+      selectedStrategy?.getIdentifier() == UsageBasedBlockingStrategy.id
+      ? false
+      : (profile?.askForStartSettings ?? askForStartSettings)
 
     enforceStrategyPolicies()
   }
@@ -116,6 +130,9 @@ final class BlockedProfileDraft: ObservableObject {
     in context: ModelContext
   ) throws -> BlockedProfiles {
     ensureSavedStartSettings()
+    if selectedStrategy?.getIdentifier() == UsageBasedBlockingStrategy.id {
+      askForStartSettings = false
+    }
     schedule.updatedAt = Date()
 
     let reminderTimeSeconds: UInt32? =
@@ -145,14 +162,14 @@ final class BlockedProfileDraft: ObservableObject {
         enableAllowModeDomains: enableAllowModeDomain,
         enableSafariBlocking: enableSafariBlocking,
         enableAdultContentBlocking: enableAdultContentBlocking,
-        enableMacSync: enableMacSync,
         domains: domains,
         physicalUnblockItems: .some(physicalUnblockItemsToSave),
         schedule: schedule,
         disableBackgroundStops: disableBackgroundStops,
         enableEmergencyUnblock: enableEmergencyUnblock,
         enableHardMode: selectedStrategyAllowsHardMode && enableHardMode,
-        hardModeDurationInMinutes: hardModeDurationInMinutes
+        hardModeDurationInMinutes: hardModeDurationInMinutes,
+        stopDelayInSeconds: stopDelayInSeconds
       )
 
       DeviceActivityCenterUtil.scheduleTimerActivity(for: updatedProfile)
@@ -178,14 +195,14 @@ final class BlockedProfileDraft: ObservableObject {
       enableAllowModeDomains: enableAllowModeDomain,
       enableSafariBlocking: enableSafariBlocking,
       enableAdultContentBlocking: enableAdultContentBlocking,
-      enableMacSync: enableMacSync,
       domains: domains,
       physicalUnblockItems: physicalUnblockItemsToSave,
       schedule: schedule,
       disableBackgroundStops: disableBackgroundStops,
       enableEmergencyUnblock: enableEmergencyUnblock,
       enableHardMode: selectedStrategyAllowsHardMode && enableHardMode,
-      hardModeDurationInMinutes: hardModeDurationInMinutes
+      hardModeDurationInMinutes: hardModeDurationInMinutes,
+      stopDelayInSeconds: stopDelayInSeconds
     )
 
     DeviceActivityCenterUtil.scheduleTimerActivity(for: newProfile)

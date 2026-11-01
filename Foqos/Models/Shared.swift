@@ -37,7 +37,6 @@ enum SharedData {
     var enableAllowModeDomains: Bool
     var enableSafariBlocking: Bool
     var enableAdultContentBlocking: Bool? = nil
-    var enableMacSync: Bool? = nil
 
     var domains: [String]?
 
@@ -53,6 +52,7 @@ enum SharedData {
 
     var disableBackgroundStops: Bool?
     var enableEmergencyUnblock: Bool?
+    var stopDelayInSeconds: Int? = 5
   }
 
   // MARK: – Serializable snapshot of a session (no profile object)

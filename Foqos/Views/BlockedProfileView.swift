@@ -23,6 +23,8 @@ struct BlockedProfileView: View {
 
   // If profile is nil, we're creating a new profile
   var profile: BlockedProfiles?
+  let preferredStrategyId: String?
+  let allowedStrategyIds: [String]?
 
   @StateObject private var draft: BlockedProfileDraft
 
@@ -66,9 +68,27 @@ struct BlockedProfileView: View {
     strategyManager.activeSession?.isActive ?? false
   }
 
-  init(profile: BlockedProfiles? = nil) {
+  private var strategyPickerStrategies: [BlockingStrategy] {
+    let allowedIdentifiers = allowedStrategyIds ?? StrategyManager.nonUsageBasedStrategies.map {
+      $0.getIdentifier()
+    }
+
+    return StrategyManager.availableStrategies.filter {
+      allowedIdentifiers.contains($0.getIdentifier())
+    }
+  }
+
+  init(
+    profile: BlockedProfiles? = nil,
+    preferredStrategyId: String? = nil,
+    allowedStrategyIds: [String]? = nil
+  ) {
     self.profile = profile
-    _draft = StateObject(wrappedValue: BlockedProfileDraft(profile: profile))
+    self.preferredStrategyId = preferredStrategyId
+    self.allowedStrategyIds = allowedStrategyIds
+    _draft = StateObject(
+      wrappedValue: BlockedProfileDraft(profile: profile, preferredStrategyId: preferredStrategyId)
+    )
   }
 
   var body: some View {
@@ -96,7 +116,7 @@ struct BlockedProfileView: View {
           draft: draft,
           showingStrategyPicker: $showingStrategyPicker,
           disabled: isBlocking,
-          showsStartSettings: isEditing,
+          showsStartSettings: isEditing || draft.selectedStrategy?.getIdentifier() == UsageBasedBlockingStrategy.id,
           onUpdateStartSettings: { settingsKind in
             startSettingsDestination = settingsKind
           }
@@ -114,7 +134,9 @@ struct BlockedProfileView: View {
           disabled: isBlocking
         )
 
-        BlockedProfileStrictUnlocksSection(draft: draft, disabled: isBlocking)
+        if draft.selectedStrategy?.getIdentifier() != UsageBasedBlockingStrategy.id {
+          BlockedProfileStrictUnlocksSection(draft: draft, disabled: isBlocking)
+        }
 
         BlockedProfileScheduleSection(
           draft: draft,
@@ -122,17 +144,17 @@ struct BlockedProfileView: View {
           disabled: isBlocking
         )
 
-        BlockedProfileBreaksSection(draft: draft, disabled: isBlocking)
-
         BlockedProfileStrictSafeguardsSection(draft: draft, disabled: isBlocking)
 
         BlockedProfileSessionSafeguardsSection(draft: draft, disabled: isBlocking)
 
-        BlockedProfileNotificationsSection(
-          draft: draft,
-          profile: profile,
-          disabled: isBlocking
-        )
+        if draft.selectedStrategy?.getIdentifier() != UsageBasedBlockingStrategy.id {
+          BlockedProfileNotificationsSection(
+            draft: draft,
+            profile: profile,
+            disabled: isBlocking
+          )
+        }
 
       }
       .scrollDismissesKeyboard(.interactively)
@@ -224,7 +246,7 @@ struct BlockedProfileView: View {
       }
       .sheet(isPresented: $showingStrategyPicker) {
         StrategyPicker(
-          strategies: StrategyManager.availableStrategies,
+          strategies: strategyPickerStrategies,
           selectedStrategy: $draft.selectedStrategy,
           isPresented: $showingStrategyPicker
         )

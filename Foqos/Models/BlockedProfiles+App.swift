@@ -115,7 +115,6 @@ extension BlockedProfiles {
     enableAllowModeDomains: Bool? = nil,
     enableSafariBlocking: Bool? = nil,
     enableAdultContentBlocking: Bool? = nil,
-    enableMacSync: Bool? = nil,
     order: Int? = nil,
     domains: [String]? = nil,
     physicalUnblockItems: [PhysicalUnblockItem]?? = nil,
@@ -123,7 +122,8 @@ extension BlockedProfiles {
     disableBackgroundStops: Bool? = nil,
     enableEmergencyUnblock: Bool? = nil,
     enableHardMode: Bool? = nil,
-    hardModeDurationInMinutes: Int? = nil
+    hardModeDurationInMinutes: Int? = nil,
+    stopDelayInSeconds: Int? = nil
   ) throws -> BlockedProfiles {
     if let newName = name {
       profile.name = newName
@@ -200,15 +200,6 @@ extension BlockedProfiles {
       profile.enableAdultContentBlocking = newEnableAdultContentBlocking
     }
 
-    if let newEnableMacSync = enableMacSync {
-      profile.enableMacSync = newEnableMacSync
-    }
-
-    if profile.enableMacSync {
-      profile.enableAllowModeDomains = false
-      profile.enableAdultContentBlocking = false
-    }
-
     if let newOrder = order {
       profile.order = newOrder
     }
@@ -235,6 +226,10 @@ extension BlockedProfiles {
 
     if let hardModeDurationInMinutes {
       profile.hardModeDurationInMinutes = hardModeDurationInMinutes
+    }
+
+    if let stopDelayInSeconds {
+      profile.stopDelayInSeconds = max(0, min(60, stopDelayInSeconds))
     }
 
     if let physicalUnblockItems {
@@ -306,14 +301,14 @@ extension BlockedProfiles {
       enableAllowModeDomains: profile.enableAllowModeDomains,
       enableSafariBlocking: profile.enableSafariBlocking,
       enableAdultContentBlocking: profile.enableAdultContentBlocking,
-      enableMacSync: profile.enableMacSync,
       domains: profile.domains,
       physicalUnblockNFCTagId: nil,
       physicalUnblockQRCodeId: nil,
       physicalUnblockItems: profile.physicalUnblockItems,
       schedule: profile.schedule,
       disableBackgroundStops: profile.disableBackgroundStops,
-      enableEmergencyUnblock: profile.enableEmergencyUnblock
+      enableEmergencyUnblock: profile.enableEmergencyUnblock,
+      stopDelayInSeconds: profile.stopDelayInSeconds
     )
   }
 
@@ -366,14 +361,14 @@ extension BlockedProfiles {
     enableAllowModeDomains: Bool = false,
     enableSafariBlocking: Bool = true,
     enableAdultContentBlocking: Bool = false,
-    enableMacSync: Bool = false,
     domains: [String]? = nil,
     physicalUnblockItems: [PhysicalUnblockItem]? = nil,
     schedule: BlockedProfileSchedule? = nil,
     disableBackgroundStops: Bool = false,
     enableEmergencyUnblock: Bool = true,
     enableHardMode: Bool = false,
-    hardModeDurationInMinutes: Int = 30
+    hardModeDurationInMinutes: Int = 30,
+    stopDelayInSeconds: Int = 0
   ) throws -> BlockedProfiles {
     let profileOrder = getNextOrder(in: context)
 
@@ -395,14 +390,14 @@ extension BlockedProfiles {
       enableAllowModeDomains: enableAllowModeDomains,
       enableSafariBlocking: enableSafariBlocking,
       enableAdultContentBlocking: enableAdultContentBlocking,
-      enableMacSync: enableMacSync,
       order: profileOrder,
       domains: domains,
       physicalUnblockItems: physicalUnblockItems,
       disableBackgroundStops: disableBackgroundStops,
       enableEmergencyUnblock: enableEmergencyUnblock,
       enableHardMode: enableHardMode,
-      hardModeDurationInMinutes: hardModeDurationInMinutes
+      hardModeDurationInMinutes: hardModeDurationInMinutes,
+      stopDelayInSeconds: stopDelayInSeconds
     )
 
     if let schedule = schedule {
@@ -441,14 +436,14 @@ extension BlockedProfiles {
       enableAllowModeDomains: source.enableAllowModeDomains,
       enableSafariBlocking: source.enableSafariBlocking,
       enableAdultContentBlocking: source.enableAdultContentBlocking,
-      enableMacSync: source.enableMacSync,
       order: nextOrder,
       domains: source.domains,
       physicalUnblockItems: source.physicalUnblockItems,
       schedule: source.schedule,
       enableEmergencyUnblock: source.enableEmergencyUnblock,
       enableHardMode: source.enableHardMode,
-      hardModeDurationInMinutes: source.hardModeDurationInMinutes
+      hardModeDurationInMinutes: source.hardModeDurationInMinutes,
+      stopDelayInSeconds: source.stopDelayInSeconds
     )
 
     context.insert(cloned)

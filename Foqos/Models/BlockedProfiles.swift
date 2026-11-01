@@ -25,7 +25,6 @@ class BlockedProfiles {
   var enableAllowModeDomains: Bool = false
   var enableSafariBlocking: Bool = true
   var enableAdultContentBlocking: Bool = false
-  var enableMacSync: Bool = false
 
   @available(
     *, deprecated, message: "Use physicalUnblockItems instead - supports multiple NFC/QR codes"
@@ -50,6 +49,7 @@ class BlockedProfiles {
   var enableEmergencyUnblock: Bool = true
   var enableHardMode: Bool = false
   var hardModeDurationInMinutes: Int = 30
+  var stopDelayInSeconds: Int = 0
 
   var customReminderMessage: String?
 
@@ -76,7 +76,6 @@ class BlockedProfiles {
     enableAllowModeDomains: Bool = false,
     enableSafariBlocking: Bool = true,
     enableAdultContentBlocking: Bool = false,
-    enableMacSync: Bool = false,
     order: Int = 0,
     domains: [String]? = nil,
     physicalUnblockItems: [PhysicalUnblockItem]? = nil,
@@ -84,7 +83,8 @@ class BlockedProfiles {
     disableBackgroundStops: Bool = false,
     enableEmergencyUnblock: Bool = true,
     enableHardMode: Bool = false,
-    hardModeDurationInMinutes: Int = 30
+    hardModeDurationInMinutes: Int = 30,
+    stopDelayInSeconds: Int = 0
   ) {
     self.id = id
     self.name = name
@@ -106,10 +106,9 @@ class BlockedProfiles {
     self.enableStrictMode = enableStrictMode
     self.enableBlockAppInstallation = enableBlockAppInstallation
     self.enableAllowMode = enableAllowMode
-    self.enableAllowModeDomains = enableMacSync ? false : enableAllowModeDomains
+    self.enableAllowModeDomains = enableAllowModeDomains
     self.enableSafariBlocking = enableSafariBlocking
-    self.enableAdultContentBlocking = enableMacSync ? false : enableAdultContentBlocking
-    self.enableMacSync = enableMacSync
+    self.enableAdultContentBlocking = enableAdultContentBlocking
     self.domains = domains
 
     self.physicalUnblockItems = PhysicalUnblockItem.normalizedItems(physicalUnblockItems)
@@ -119,5 +118,6 @@ class BlockedProfiles {
     self.enableEmergencyUnblock = enableEmergencyUnblock
     self.enableHardMode = enableHardMode
     self.hardModeDurationInMinutes = hardModeDurationInMinutes
+    self.stopDelayInSeconds = max(0, min(60, stopDelayInSeconds))
   }
 }

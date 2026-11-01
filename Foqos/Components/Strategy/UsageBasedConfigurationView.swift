@@ -9,13 +9,20 @@ struct UsageBasedConfigurationView: View {
   let onSave: (UsageBasedStrategyData) -> Void
 
   @State private var allowanceInMinutes: Double
-  @State private var disableCountdownInSeconds: Double
   @State private var enableFiveMinuteWarning: Bool
+  @State private var extraTimeEnabled: Bool
+  @State private var extraTimeInMinutes: Double
+  @State private var enableExtraTimeReduction: Bool
+  @State private var extraTimeCooldownInSeconds: Double
   @State private var isSliding = false
 
   private let minMinutes: Double = 5
   private let maxMinutes: Double = 60
   private let stepMinutes: Double = 5
+  private let extraTimeMinMinutes: Double = 1
+  private let extraTimeMaxMinutes: Double = 30
+  private let extraTimeCooldownMinSeconds: Double = 5
+  private let extraTimeCooldownMaxSeconds: Double = 60
   private let snapPoints: [Double] = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
   private let snapThreshold: Double = 3
 
@@ -29,71 +36,175 @@ struct UsageBasedConfigurationView: View {
     self.actionTitle = actionTitle
     self.onSave = onSave
     _allowanceInMinutes = State(initialValue: Double(initialConfiguration.allowanceInMinutes))
-    _disableCountdownInSeconds = State(
-      initialValue: Double(initialConfiguration.disableCountdownInSeconds)
-    )
     _enableFiveMinuteWarning = State(
       initialValue: initialConfiguration.enableFiveMinuteWarning
+    )
+    _extraTimeEnabled = State(
+      initialValue: initialConfiguration.extraTimeInMinutes > 0 || initialConfiguration.enableExtraTimeReduction || initialConfiguration.extraTimeCooldownInSeconds > 0
+    )
+    _extraTimeInMinutes = State(
+      initialValue: Double(initialConfiguration.extraTimeInMinutes)
+    )
+    _enableExtraTimeReduction = State(
+      initialValue: initialConfiguration.enableExtraTimeReduction
+    )
+    _extraTimeCooldownInSeconds = State(
+      initialValue: Double(initialConfiguration.extraTimeCooldownInSeconds)
     )
   }
 
   var body: some View {
     NavigationStack {
       VStack(spacing: 0) {
-        VStack(alignment: .leading, spacing: 24) {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Hourly Usage Allowance")
-              .font(.title2.bold())
+        ScrollView {
+          VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Hourly Usage Allowance")
+                .font(.title2.bold())
 
-            Text("Choose how many minutes of selected app use are allowed each clock hour.")
-              .font(.callout)
-              .foregroundColor(.secondary)
-          }
-
-          VStack(spacing: 16) {
-            timeDisplay
-            sliderControls
-          }
-
-          Toggle("5 minute warning notification", isOn: $enableFiveMinuteWarning)
-            .tint(themeManager.themeColor)
-
-          VStack(alignment: .leading, spacing: 10) {
-            Text("Time before disable")
-              .font(.headline)
-
-            Text("Choose how long the unlock delay lasts before the app disables this strategy.")
-              .font(.callout)
-              .foregroundColor(.secondary)
-
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-              Text("\(Int(disableCountdownInSeconds))s")
-                .font(.system(size: 28, weight: .bold, design: .rounded))
-                .contentTransition(.numericText())
-              Text("before disable")
+              Text("Choose how many minutes of selected app use are allowed each clock hour.")
+                .font(.callout)
                 .foregroundColor(.secondary)
             }
 
-            Slider(
-              value: $disableCountdownInSeconds,
-              in: 5...60,
-              step: 1,
-              onEditingChanged: { _ in }
-            )
-            .tint(themeManager.themeColor)
-          }
+            VStack(spacing: 16) {
+              timeDisplay
+              sliderControls
+            }
 
-          if Int(allowanceInMinutes) <= 5 {
-            Text("A warning requires an allowance of at least 6 minutes.")
-              .font(.caption)
-              .foregroundColor(.secondary)
+            VStack(spacing: 0) {
+              Divider()
+
+              HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                  Text("Allowance warning notification")
+
+                  Text("Receive a warning 1 minute before the end of your allowance")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $enableFiveMinuteWarning)
+                  .labelsHidden()
+                  .toggleStyle(.switch)
+                  .tint(themeManager.themeColor)
+              }
+              .padding(.vertical, 12)
+
+              Divider()
+
+              HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                  Text("Allow extra time")
+
+                  Text("Let this profile extend the session briefly when the limit is reached")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $extraTimeEnabled)
+                  .labelsHidden()
+                  .toggleStyle(.switch)
+                  .tint(themeManager.themeColor)
+              }
+              .padding(.vertical, 12)
+
+              if extraTimeEnabled {
+                VStack(alignment: .leading, spacing: 12) {
+                  HStack {
+                    Text("Extra time amount")
+                    Spacer()
+                    Text("\(Int(extraTimeInMinutes))m")
+                      .font(.system(size: 18, weight: .semibold))
+                  }
+
+                  Slider(
+                    value: $extraTimeInMinutes,
+                    in: extraTimeMinMinutes...extraTimeMaxMinutes,
+                    step: 1
+                  )
+                  .tint(themeManager.themeColor)
+                }
+                .padding(.vertical, 12)
+
+                HStack(alignment: .top, spacing: 16) {
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text("Reduce each time")
+
+                    Text("Lower the extra-time allowance after each use")
+                      .font(.subheadline)
+                      .foregroundColor(.secondary)
+                  }
+
+                  Spacer()
+
+                  Toggle("", isOn: $enableExtraTimeReduction)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .tint(themeManager.themeColor)
+                }
+                .padding(.vertical, 12)
+
+                HStack(alignment: .top, spacing: 16) {
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text("Wait before extra time")
+
+                    Text("Delay before more extra time can be used")
+                      .font(.subheadline)
+                      .foregroundColor(.secondary)
+                  }
+
+                  Spacer()
+
+                  Toggle(
+                    "",
+                    isOn: Binding(
+                      get: { extraTimeCooldownInSeconds > 0 },
+                      set: { newValue in
+                        if newValue {
+                          extraTimeCooldownInSeconds = max(extraTimeCooldownInSeconds, extraTimeCooldownMinSeconds)
+                        } else {
+                          extraTimeCooldownInSeconds = 0
+                        }
+                      }
+                    )
+                  )
+                  .labelsHidden()
+                  .toggleStyle(.switch)
+                  .tint(themeManager.themeColor)
+                }
+                .padding(.vertical, 12)
+
+                if extraTimeCooldownInSeconds > 0 {
+                  VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                      Text("Wait time")
+                      Spacer()
+                      Text("\(Int(extraTimeCooldownInSeconds))s")
+                        .font(.system(size: 18, weight: .semibold))
+                    }
+
+                    Slider(
+                      value: $extraTimeCooldownInSeconds,
+                      in: extraTimeCooldownMinSeconds...extraTimeCooldownMaxSeconds,
+                      step: 1
+                    )
+                    .tint(themeManager.themeColor)
+                  }
+                  .padding(.vertical, 12)
+                }
+              }
+            }
           }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 24)
+          .padding(.top, 28)
+          .padding(.bottom, 16)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 24)
-        .padding(.top, 28)
-
-        Spacer(minLength: 24)
 
         ActionButton(
           title: actionTitle,
@@ -102,16 +213,19 @@ struct UsageBasedConfigurationView: View {
         ) {
           let finalAllowance = Int(round(allowanceInMinutes / stepMinutes) * stepMinutes)
           let normalizedAllowance = min(max(finalAllowance, Int(minMinutes)), Int(maxMinutes))
-          let normalizedCountdown = Int(disableCountdownInSeconds.rounded())
+          let normalizedExtraTime = Int(round(extraTimeInMinutes))
+          let normalizedCooldown = Int(round(extraTimeCooldownInSeconds))
 
-          if enableFiveMinuteWarning && normalizedAllowance > 5 {
+          if enableFiveMinuteWarning && normalizedAllowance > 1 {
             UsageBasedNotificationScheduler.requestAuthorization()
           }
           onSave(
             UsageBasedStrategyData(
               allowanceInMinutes: normalizedAllowance,
               enableFiveMinuteWarning: enableFiveMinuteWarning,
-              disableCountdownInSeconds: normalizedCountdown
+              extraTimeInMinutes: extraTimeEnabled ? normalizedExtraTime : 0,
+              enableExtraTimeReduction: extraTimeEnabled && enableExtraTimeReduction,
+              extraTimeCooldownInSeconds: extraTimeEnabled ? normalizedCooldown : 0
             )
           )
           dismiss()
@@ -146,54 +260,30 @@ struct UsageBasedConfigurationView: View {
   }
 
   private var sliderControls: some View {
-    HStack(spacing: 16) {
-      Button {
-        decrementAllowance()
-      } label: {
-        Image(systemName: "minus.circle.fill")
-          .font(.system(size: 32))
-          .foregroundColor(allowanceInMinutes > minMinutes ? themeManager.themeColor : .gray)
-      }
-      .disabled(allowanceInMinutes <= minMinutes)
-      .scaleEffect(allowanceInMinutes <= minMinutes ? 0.9 : 1.0)
-      .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.5), trigger: allowanceInMinutes)
-
-      VStack(spacing: 8) {
-        Slider(
-          value: $allowanceInMinutes,
-          in: minMinutes...maxMinutes,
-          step: stepMinutes,
-          onEditingChanged: { editing in
-            isSliding = editing
-            if !editing {
-              snapToNearestPreset()
-            }
+    VStack(spacing: 8) {
+      Slider(
+        value: $allowanceInMinutes,
+        in: minMinutes...maxMinutes,
+        step: stepMinutes,
+        onEditingChanged: { editing in
+          isSliding = editing
+          if !editing {
+            snapToNearestPreset()
           }
-        )
-        .tint(themeManager.themeColor)
-        .sensoryFeedback(.selection, trigger: allowanceInMinutes)
-
-        HStack {
-          Text("5m")
-            .font(.caption2)
-            .foregroundColor(.secondary)
-          Spacer()
-          Text("1h")
-            .font(.caption2)
-            .foregroundColor(.secondary)
         }
-      }
+      )
+      .tint(themeManager.themeColor)
+      .sensoryFeedback(.selection, trigger: allowanceInMinutes)
 
-      Button {
-        incrementAllowance()
-      } label: {
-        Image(systemName: "plus.circle.fill")
-          .font(.system(size: 32))
-          .foregroundColor(allowanceInMinutes < maxMinutes ? themeManager.themeColor : .gray)
+      HStack {
+        Text("5m")
+          .font(.caption2)
+          .foregroundColor(.secondary)
+        Spacer()
+        Text("1h")
+          .font(.caption2)
+          .foregroundColor(.secondary)
       }
-      .disabled(allowanceInMinutes >= maxMinutes)
-      .scaleEffect(allowanceInMinutes >= maxMinutes ? 0.9 : 1.0)
-      .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.5), trigger: allowanceInMinutes)
     }
   }
 

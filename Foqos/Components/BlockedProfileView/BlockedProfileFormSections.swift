@@ -46,28 +46,44 @@ struct BlockedProfileStrategyFields: View {
   var disabled: Bool
   var showsSeparators: Bool = false
 
+  private var isUsageBasedStrategy: Bool {
+    draft.selectedStrategy?.getIdentifier() == UsageBasedBlockingStrategy.id
+  }
+
   var body: some View {
-    Button(action: { showingStrategyPicker = true }) {
-      HStack {
-        Text("Choose Strategy")
-          .foregroundStyle(themeManager.themeColor)
-        Spacer()
-        Image(systemName: "chevron.right")
-          .foregroundStyle(.gray)
+    if isUsageBasedStrategy {
+      if let selectedStrategy = draft.selectedStrategy {
+        StrategyRow(
+          strategy: selectedStrategy,
+          isSelected: false,
+          onTap: {},
+          accessoryStyle: .none
+        )
+        .allowsHitTesting(false)
       }
-    }
-    .disabled(disabled)
+    } else {
+      Button(action: { showingStrategyPicker = true }) {
+        HStack {
+          Text("Choose Strategy")
+            .foregroundStyle(themeManager.themeColor)
+          Spacer()
+          Image(systemName: "chevron.right")
+            .foregroundStyle(.gray)
+        }
+      }
+      .disabled(disabled)
 
-    if let selectedStrategy = draft.selectedStrategy {
-      ProfileFieldDivider(isVisible: showsSeparators)
+      if let selectedStrategy = draft.selectedStrategy {
+        ProfileFieldDivider(isVisible: showsSeparators)
 
-      StrategyRow(
-        strategy: selectedStrategy,
-        isSelected: false,
-        onTap: {},
-        accessoryStyle: .none
-      )
-      .allowsHitTesting(false)
+        StrategyRow(
+          strategy: selectedStrategy,
+          isSelected: false,
+          onTap: {},
+          accessoryStyle: .none
+        )
+        .allowsHitTesting(false)
+      }
     }
   }
 }
@@ -81,6 +97,10 @@ struct BlockedProfileStrategySection: View {
   var showsStartSettings: Bool = false
   var onUpdateStartSettings: ((StrategyStartSettingsKind) -> Void)?
 
+  private var isUsageBasedStrategy: Bool {
+    draft.selectedStrategy?.getIdentifier() == UsageBasedBlockingStrategy.id
+  }
+
   var body: some View {
     Section {
       BlockedProfileStrategyFields(
@@ -89,14 +109,14 @@ struct BlockedProfileStrategySection: View {
         disabled: disabled
       )
 
-      if showsStartSettings,
+      if showsStartSettings || isUsageBasedStrategy,
         let settingsKind = StrategyStartSettingsKind(strategy: draft.selectedStrategy)
       {
         Button {
           onUpdateStartSettings?(settingsKind)
         } label: {
           HStack {
-            Text("Update Start Settings")
+            Text(isUsageBasedStrategy ? "Configure Usage Settings" : "Update Start Settings")
               .foregroundStyle(themeManager.themeColor)
             Spacer()
             Image(systemName: "chevron.right")
@@ -105,12 +125,14 @@ struct BlockedProfileStrategySection: View {
         }
         .disabled(disabled)
 
-        CustomToggle(
-          title: "Ask Me Every Time",
-          description: "Turn off to use the saved settings automatically.",
-          isOn: $draft.askForStartSettings,
-          isDisabled: disabled
-        )
+        if !isUsageBasedStrategy {
+          CustomToggle(
+            title: "Ask Me Every Time",
+            description: "Turn off to use the saved settings automatically.",
+            isOn: $draft.askForStartSettings,
+            isDisabled: disabled
+          )
+        }
       }
     } header: {
       Text("Blocking Strategy")
@@ -132,19 +154,20 @@ struct BlockedProfileAppsFields: View {
       disabled: disabled
     )
 
-    ProfileFieldDivider(isVisible: showsSeparators)
+    if draft.selectedStrategySupportsAllowMode {
+      ProfileFieldDivider(isVisible: showsSeparators)
 
-    CustomToggle(
-      title: "Allow Only Selected Apps",
-      description:
-        "Only selected apps stay available during sessions. Turning this on clears your blocked-app selection.",
-      isOn: $draft.enableAllowMode,
-      isDisabled: disabled || !draft.selectedStrategySupportsAllowMode,
-      errorMessage: draft.selectedStrategySupportsAllowMode
-        ? nil : "Allow-only mode isn't supported with Temporary Access."
-    )
+      CustomToggle(
+        title: "Allow Only Selected Apps",
+        description:
+          "Only selected apps stay available during sessions. Turning this on clears your blocked-app selection.",
+        isOn: $draft.enableAllowMode,
+        isDisabled: disabled,
+        errorMessage: nil
+      )
 
-    ProfileFieldDivider(isVisible: showsSeparators)
+      ProfileFieldDivider(isVisible: showsSeparators)
+    }
 
     CustomToggle(
       title: "Block Websites in Safari",
@@ -189,43 +212,28 @@ struct BlockedProfileDomainsFields: View {
       disabled: disabled
     )
 
-    ProfileFieldDivider(isVisible: showsSeparators)
+    if draft.selectedStrategySupportsAllowMode {
+      ProfileFieldDivider(isVisible: showsSeparators)
 
-    CustomToggle(
-      title: "Sync to Mac",
-      description:
-        "Block the same selected domains on your Mac with the Foqos for Mac app.",
-      isOn: $draft.enableMacSync,
-      isDisabled: disabled,
-      learnMoreURL: URL(string: "https://www.foqos.app/mac.html")
-    )
-    .onChange(of: draft.enableMacSync) { _, newValue in
-      if newValue {
-        draft.enableAllowModeDomain = false
-        draft.enableAdultContentBlocking = false
-      }
+      CustomToggle(
+        title: "Allow Only Selected Domains",
+        description:
+          "Only selected domains stay available during sessions.",
+        isOn: $draft.enableAllowModeDomain,
+        isDisabled: disabled,
+        errorMessage: nil
+      )
+
+      ProfileFieldDivider(isVisible: showsSeparators)
     }
-
-    ProfileFieldDivider(isVisible: showsSeparators)
-
-    CustomToggle(
-      title: "Allow Only Selected Domains",
-      description:
-        "Only selected domains stay available during sessions.",
-      isOn: $draft.enableAllowModeDomain,
-      isDisabled: disabled || draft.enableMacSync,
-      errorMessage: draft.enableMacSync ? "Allow-only mode isn't supported on Mac." : nil
-    )
-
-    ProfileFieldDivider(isVisible: showsSeparators)
 
     CustomToggle(
       title: "Block Adult Websites",
       description:
         "Use Apple's adult-content filter during sessions. You can still add extra domains to block.",
       isOn: $draft.enableAdultContentBlocking,
-      isDisabled: disabled || draft.enableMacSync,
-      errorMessage: draft.enableMacSync ? "Adult website blocking isn't supported on Mac." : nil
+      isDisabled: disabled,
+      errorMessage: nil
     )
     .onChange(of: draft.enableAllowModeDomain) { _, newValue in
       if newValue {
@@ -452,6 +460,8 @@ struct BlockedProfileStrictSafeguardsFields: View {
 }
 
 struct BlockedProfileSessionSafeguardsFields: View {
+  @EnvironmentObject private var themeManager: ThemeManager
+
   @ObservedObject var draft: BlockedProfileDraft
   var disabled: Bool
   var showsSeparators: Bool = false
@@ -460,6 +470,52 @@ struct BlockedProfileSessionSafeguardsFields: View {
 
   var body: some View {
     BlockedProfileHardModeFields(draft: draft, disabled: disabled)
+
+    ProfileFieldDivider(isVisible: showsSeparators)
+
+    VStack(alignment: .leading, spacing: 12) {
+      CustomToggle(
+        title: "Wait before disable",
+        description: "Give yourself a moment before the profile disables.",
+        isOn: Binding(
+          get: { draft.stopDelayInSeconds > 0 },
+          set: { isEnabled in
+            if isEnabled {
+              draft.stopDelayInSeconds = draft.stopDelayInSeconds > 0
+                ? draft.stopDelayInSeconds
+                : 5
+            } else {
+              draft.stopDelayInSeconds = 0
+            }
+          }
+        ),
+        isDisabled: disabled
+      )
+
+      if draft.stopDelayInSeconds > 0 {
+        VStack(alignment: .leading, spacing: 8) {
+          HStack {
+            Spacer()
+
+            Text("\(draft.stopDelayInSeconds)s")
+              .font(.system(size: 18, weight: .semibold))
+              .foregroundColor(.primary)
+          }
+
+          Slider(
+            value: Binding(
+              get: { Double(draft.stopDelayInSeconds) },
+              set: { draft.stopDelayInSeconds = Int($0.rounded()) }
+            ),
+            in: 0...60,
+            step: 1
+          )
+          .tint(themeManager.themeColor)
+        }
+        .padding(.vertical, 4)
+      }
+    }
+    .padding(.vertical, 4)
 
     ProfileFieldDivider(isVisible: showsSeparators)
 

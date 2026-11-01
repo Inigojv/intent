@@ -5,6 +5,7 @@ import SwiftUI
 private enum ProfileCreationDestination: Identifiable {
   case guided
   case advanced
+  case usageBased
 
   var id: String {
     switch self {
@@ -12,11 +13,19 @@ private enum ProfileCreationDestination: Identifiable {
       return "guided"
     case .advanced:
       return "advanced"
+    case .usageBased:
+      return "usageBased"
     }
   }
 }
 
 struct BlockedProfileListView: View {
+  enum ListType {
+    case onDemand
+    case usageBased
+  }
+
+  let listType: ListType
   @Environment(\.modelContext) private var context
   @Environment(\.dismiss) private var dismiss
 
@@ -34,6 +43,15 @@ struct BlockedProfileListView: View {
   @State private var profileCreationDestination: ProfileCreationDestination?
   @State private var showingDataExport = false
 
+  private var filteredProfiles: [BlockedProfiles] {
+    switch listType {
+    case .onDemand:
+      return profiles.filter { $0.blockingStrategyId != UsageBasedBlockingStrategy.id }
+    case .usageBased:
+      return profiles.filter { $0.blockingStrategyId == UsageBasedBlockingStrategy.id }
+    }
+  }
+
   @State private var profileToEdit: BlockedProfiles?
   @State private var showErrorAlert = false
   @State private var editMode: EditMode = .inactive
@@ -41,23 +59,43 @@ struct BlockedProfileListView: View {
   var body: some View {
     NavigationStack {
       Group {
-        if profiles.isEmpty {
+        if filteredProfiles.isEmpty {
           ScrollView {
             VStack {
               Spacer(minLength: 70)
 
-              Welcome(
-                onGuidedTap: {
-                  if canCreateProfiles {
-                    profileCreationDestination = .guided
-                  }
-                },
-                onAdvancedTap: {
-                  if canCreateProfiles {
-                    profileCreationDestination = .advanced
+              if listType == .usageBased {
+                VStack(spacing: 18) {
+                  Text("No allowances yet")
+                    .font(.title2.weight(.semibold))
+
+                  Button {
+                    if canCreateProfiles { profileCreationDestination = .usageBased }
+                  } label: {
+                    Label("New Allowance", systemImage: "plus")
+                      .frame(maxWidth: .infinity)
+                      .padding(.vertical, 12)
+                      .background(Color.accentColor)
+                      .foregroundStyle(.white)
+                      .clipShape(RoundedRectangle(cornerRadius: 12))
                   }
                 }
-              )
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
+              } else {
+                Welcome(
+                  onGuidedTap: {
+                    if canCreateProfiles {
+                      profileCreationDestination = .guided
+                    }
+                  },
+                  onAdvancedTap: {
+                    if canCreateProfiles {
+                      profileCreationDestination = .advanced
+                    }
+                  }
+                )
+              }
 
               Spacer(minLength: 70)
             }
@@ -66,7 +104,7 @@ struct BlockedProfileListView: View {
           }
         } else {
           List {
-            ForEach(profiles) { profile in
+            ForEach(filteredProfiles) { profile in
               ProfileRow(profile: profile, isActive: profile.id == activeSessionProfileId)
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -81,7 +119,7 @@ struct BlockedProfileListView: View {
           .environment(\.editMode, $editMode)
         }
       }
-      .navigationTitle("Profiles")
+      .navigationTitle(listType == .usageBased ? "Usage-Based" : "Profiles")
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
           Button(action: { dismiss() }) {
@@ -95,7 +133,7 @@ struct BlockedProfileListView: View {
               Image(systemName: "checkmark.circle")
             }
           }
-          if !profiles.isEmpty {
+          if !filteredProfiles.isEmpty {
             Menu {
               Button {
                 editMode = .active
@@ -113,20 +151,28 @@ struct BlockedProfileListView: View {
             }
           }
           if canCreateProfiles {
-            Menu {
+            if listType == .usageBased {
               Button {
-                profileCreationDestination = .guided
+                profileCreationDestination = .usageBased
               } label: {
-                Label("Guided Setup", systemImage: "list.bullet.clipboard")
+                Image(systemName: "plus")
               }
+            } else {
+              Menu {
+                Button {
+                  profileCreationDestination = .guided
+                } label: {
+                  Label("Guided Setup", systemImage: "list.bullet.clipboard")
+                }
 
-              Button {
-                profileCreationDestination = .advanced
+                Button {
+                  profileCreationDestination = .advanced
+                } label: {
+                  Label("Full Profile Editor", systemImage: "slider.horizontal.3")
+                }
               } label: {
-                Label("Full Profile Editor", systemImage: "slider.horizontal.3")
+                Image(systemName: "plus")
               }
-            } label: {
-              Image(systemName: "plus")
             }
           }
         }
@@ -137,10 +183,21 @@ struct BlockedProfileListView: View {
           GuidedBlockedProfileCreationView()
         case .advanced:
           BlockedProfileView()
+        case .usageBased:
+          BlockedProfileView(
+            profile: nil,
+            preferredStrategyId: UsageBasedBlockingStrategy.id,
+            allowedStrategyIds: [UsageBasedBlockingStrategy.id]
+          )
         }
       }
       .sheet(item: $profileToEdit) { profile in
-        BlockedProfileView(profile: profile)
+        BlockedProfileView(
+          profile: profile,
+          allowedStrategyIds: listType == .usageBased
+            ? [UsageBasedBlockingStrategy.id]
+            : nil
+        )
       }
       .sheet(isPresented: $showingDataExport) {
         BlockedProfileDataExportView()
@@ -207,6 +264,6 @@ struct BlockedProfileListView: View {
 }
 
 #Preview {
-  BlockedProfileListView()
+  BlockedProfileListView(listType: .onDemand)
     .modelContainer(for: BlockedProfiles.self, inMemory: true)
 }

@@ -9,7 +9,6 @@ private enum GuidedProfileStep: Int, CaseIterable, Identifiable {
   case domains
   case strictUnlocks
   case schedule
-  case breaks
   case strictSafeguards
   case sessionSafeguards
   case notifications
@@ -31,8 +30,6 @@ private enum GuidedProfileStep: Int, CaseIterable, Identifiable {
       return "Unlocks"
     case .schedule:
       return "Schedule"
-    case .breaks:
-      return "Breaks"
     case .strictSafeguards:
       return "Protection"
     case .sessionSafeguards:
@@ -58,8 +55,6 @@ private enum GuidedProfileStep: Int, CaseIterable, Identifiable {
       return "Set physical unlocks"
     case .schedule:
       return "Add a schedule"
-    case .breaks:
-      return "Allow breaks"
     case .strictSafeguards:
       return "Choose session protection"
     case .sessionSafeguards:
@@ -82,16 +77,13 @@ private enum GuidedProfileStep: Int, CaseIterable, Identifiable {
     case .apps:
       return "Select the apps or categories this profile should restrict or allow."
     case .domains:
-      return
-        "Add specific domains, choose how they're blocked in Safari, and optionally sync them with Foqos for Mac."
+      return "Add specific domains and choose how they're blocked in Safari."
     case .strictUnlocks:
       return
         "Some strategies let any NFC tag, QR code, or barcode unlock profiles. "
         + "Physical unlocks require a specific tag or code. You can add more than one."
     case .schedule:
       return "Schedules can start this profile automatically on selected days."
-    case .breaks:
-      return "Timed breaks let you pause once during a session without ending the profile."
     case .strictSafeguards:
       return
         "These settings make it harder to work around restrictions "
@@ -221,7 +213,7 @@ struct GuidedBlockedProfileCreationView: View {
       }
       .sheet(isPresented: $showingStrategyPicker) {
         StrategyPicker(
-          strategies: StrategyManager.availableStrategies,
+          strategies: StrategyManager.nonUsageBasedStrategies,
           selectedStrategy: $draft.selectedStrategy,
           isPresented: $showingStrategyPicker
         )
@@ -265,20 +257,11 @@ struct GuidedBlockedProfileCreationView: View {
   }
 
   private var currentStepIntroTitle: String {
-    if currentStep == .breaks && !draft.selectedStrategyAllowsTimedBreaks {
-      return "Breaks are off"
-    }
-
-    return currentStep.introTitle
+    currentStep.introTitle
   }
 
   private var currentStepIntroDescription: String {
-    if currentStep == .breaks && !draft.selectedStrategyAllowsTimedBreaks {
-      return
-        "Temporary Access already gives short opens for blocked apps and categories, so timed breaks are not needed."
-    }
-
-    return currentStep.introDescription
+    currentStep.introDescription
   }
 
   @ViewBuilder
@@ -334,15 +317,6 @@ struct GuidedBlockedProfileCreationView: View {
           draft: draft,
           showingSchedulePicker: $showingSchedulePicker,
           disabled: false
-        )
-      }
-
-    case .breaks:
-      guidedCard(title: "Breaks") {
-        BlockedProfileBreaksFields(
-          draft: draft,
-          disabled: false,
-          showsSeparators: true
         )
       }
 
@@ -470,8 +444,6 @@ private struct GuidedProfileReviewContent: View {
       reviewDivider
       reviewRow(title: "Schedule", value: scheduleSummary)
       reviewDivider
-      reviewRow(title: "Breaks", value: breaksSummary)
-      reviewDivider
       reviewRow(title: "Safeguards", value: safeguardsSummary)
       reviewDivider
       reviewRow(title: "Notifications", value: notificationsSummary)
@@ -512,22 +484,6 @@ private struct GuidedProfileReviewContent: View {
 
   private var scheduleSummary: String {
     return draft.schedule.days.isEmpty ? "No schedule set" : draft.schedule.summaryText
-  }
-
-  private var breaksSummary: String {
-    if !draft.selectedStrategyAllowsTimedBreaks {
-      return "Not needed"
-    }
-
-    guard draft.enableBreaks else {
-      return "Disabled"
-    }
-
-    if draft.allowMultipleBreaks {
-      return "\(draft.breakTimeInMinutes) minutes, reusable"
-    }
-
-    return "\(draft.breakTimeInMinutes) minutes"
   }
 
   private var safeguardsSummary: String {
