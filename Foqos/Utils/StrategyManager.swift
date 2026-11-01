@@ -21,11 +21,20 @@ class StrategyManager: ObservableObject {
     ShortcutTimerBlockingStrategy(),
   ]
 
+  static var usageBasedStrategies: [BlockingStrategy] {
+    availableStrategies.filter { $0.getIdentifier() == UsageBasedBlockingStrategy.id }
+  }
+
+  static var nonUsageBasedStrategies: [BlockingStrategy] {
+    availableStrategies.filter { $0.getIdentifier() != UsageBasedBlockingStrategy.id }
+  }
+
   @Published var elapsedTime: TimeInterval = 0
   @Published var sessionDisplayTime: TimeInterval = 0
   @Published var timer: Timer?
   @Published var activeSession: BlockedProfileSession?
   @Published var stopCountdownRemaining: Int?
+  @Published var extraTimeCooldownRemaining: Int?
 
   @Published var showCustomStrategyView: Bool = false
   @Published var customStrategyView: (any View)? = nil
@@ -134,12 +143,8 @@ class StrategyManager: ObservableObject {
         return
       }
 
-      if activeProfile.blockingStrategyId == UsageBasedBlockingStrategy.id {
-        beginUsageBasedStopCountdown(context: context, profile: activeProfile)
-        return
-      }
-
-      stopBlocking(context: context)
+      beginUsageBasedStopCountdown(context: context, profile: activeProfile)
+      return
     } else {
       startBlocking(context: context, activeProfile: activeProfile)
     }
@@ -154,6 +159,45 @@ class StrategyManager: ObservableObject {
       }
     } catch {
       errorMessage = error.localizedDescription
+    }
+  }
+
+  func grantExtraTime(context: ModelContext) {
+    guard let session = activeSession,
+      session.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id,
+      let activity = UsageBasedActivityScheduler.currentState?.activityName
+    else {
+      return
+    }
+
+    guard let state = UsageBasedActivityScheduler.grantExtraTime(for: activity) else {
+      return
+    }
+
+    let remainingSeconds = max(
+      0,
+      Int(state.extraTimeCooldownUntil?.timeIntervalSince(Date()) ?? 0)
+    )
+    extraTimeCooldownRemaining = remainingSeconds > 0 ? remainingSeconds : nil
+    if remainingSeconds > 0 {
+      Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        guard let self else { return }
+        let updatedRemaining = max(
+          0,
+          Int((state.extraTimeCooldownUntil ?? Date()).timeIntervalSince(Date()))
+        )
+        self.extraTimeCooldownRemaining = updatedRemaining > 0 ? updatedRemaining : nil
+        if updatedRemaining <= 0 {
+          self.extraTimeCooldownRemaining = nil
+        }
+      }
+    }
+
+    if let currentSession = activeSession {
+      let configuration = UsageBasedStrategyData.decode(currentSession.blockedProfile.strategyData)
+      if configuration.enableFiveMinuteWarning && configuration.allowanceInMinutes > 1 {
+        UsageBasedNotificationScheduler.requestAuthorization()
+      }
     }
   }
 
@@ -894,15 +938,9 @@ class StrategyManager: ObservableObject {
   }
 
   private func beginUsageBasedStopCountdown(context: ModelContext, profile: BlockedProfiles) {
-    guard profile.blockingStrategyId == UsageBasedBlockingStrategy.id else {
-      stopBlocking(context: context)
-      return
-    }
-
     guard stopCountdownRemaining == nil else { return }
 
-    let remainingSeconds = UsageBasedStrategyData.decode(profile.strategyData)
-      .disableCountdownInSeconds
+    let remainingSeconds = profile.stopDelayInSeconds
     let countdownDuration = max(5, min(60, remainingSeconds))
     let deadline = Date().addingTimeInterval(Double(countdownDuration))
 
@@ -917,9 +955,31 @@ class StrategyManager: ObservableObject {
         self.stopCountdownTimer?.invalidate()
         self.stopCountdownTimer = nil
         self.stopCountdownRemaining = nil
-        self.stopBlocking(context: context)
+        self.forceStopSession(context: context)
       }
     }
+  }
+
+  private func forceStopSession(context: ModelContext) {
+    guard let session = activeSession else {
+      return
+    }
+
+    if session.isSessionActionLockedByHardMode() {
+      _ = canStopDuringHardMode(session)
+      return
+    }
+
+    session.endSession()
+    do {
+      try context.save()
+    } catch {
+      errorMessage = "Failed to save the session stop: \(error.localizedDescription)"
+      return
+    }
+
+    appBlocker.deactivateRestrictions()
+    handleSessionEnded(profile: session.blockedProfile)
   }
 
   private func canStopDuringHardMode(_ session: BlockedProfileSession) -> Bool {
@@ -1028,7 +1088,7 @@ class StrategyManager: ObservableObject {
     // Remove all strategy timer activities
     DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
 
-    // Publish an inactive state through iCloud so the synced Mac also clears stuck website restrictions.
+    // The app no longer publishes a Mac sync state.
     ActiveProfileSyncStore.publish(session: nil)
 
     print("Blocking state reset complete")

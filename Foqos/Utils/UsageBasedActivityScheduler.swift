@@ -8,11 +8,16 @@ struct UsageBasedMonitoringState: Codable, Equatable {
   let applicationTokens: Set<ApplicationToken>
   let categoryTokens: Set<ActivityCategoryToken>
   let webDomainTokens: Set<WebDomainToken>
-  let allowanceInMinutes: Int
+  var allowanceInMinutes: Int
   let enableFiveMinuteWarning: Bool
+  var extraTimeInMinutes: Int
+  var enableExtraTimeReduction: Bool
+  var extraTimeCooldownInSeconds: Int
   var windowStart: Date
   var warningSent = false
   var allowanceReached = false
+  var extraTimeUsedCount = 0
+  var extraTimeCooldownUntil: Date?
 
   init(
     profileId: UUID,
@@ -22,9 +27,14 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     webDomainTokens: Set<WebDomainToken>,
     allowanceInMinutes: Int,
     enableFiveMinuteWarning: Bool = true,
+    extraTimeInMinutes: Int = UsageBasedStrategyData.defaultExtraTimeInMinutes,
+    enableExtraTimeReduction: Bool = UsageBasedStrategyData.defaultExtraTimeReductionEnabled,
+    extraTimeCooldownInSeconds: Int = UsageBasedStrategyData.defaultExtraTimeCooldownInSeconds,
     windowStart: Date,
     warningSent: Bool = false,
-    allowanceReached: Bool = false
+    allowanceReached: Bool = false,
+    extraTimeUsedCount: Int = 0,
+    extraTimeCooldownUntil: Date? = nil
   ) {
     self.profileId = profileId
     self.sessionId = sessionId
@@ -33,9 +43,14 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     self.webDomainTokens = webDomainTokens
     self.allowanceInMinutes = allowanceInMinutes
     self.enableFiveMinuteWarning = enableFiveMinuteWarning
+    self.extraTimeInMinutes = extraTimeInMinutes
+    self.enableExtraTimeReduction = enableExtraTimeReduction
+    self.extraTimeCooldownInSeconds = extraTimeCooldownInSeconds
     self.windowStart = windowStart
     self.warningSent = warningSent
     self.allowanceReached = allowanceReached
+    self.extraTimeUsedCount = extraTimeUsedCount
+    self.extraTimeCooldownUntil = extraTimeCooldownUntil
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -46,9 +61,14 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     case webDomainTokens
     case allowanceInMinutes
     case enableFiveMinuteWarning
+    case extraTimeInMinutes
+    case enableExtraTimeReduction
+    case extraTimeCooldownInSeconds
     case windowStart
     case warningSent
     case allowanceReached
+    case extraTimeUsedCount
+    case extraTimeCooldownUntil
   }
 
   init(from decoder: Decoder) throws {
@@ -63,9 +83,45 @@ struct UsageBasedMonitoringState: Codable, Equatable {
       Bool.self,
       forKey: .enableFiveMinuteWarning
     ) ?? true
+    extraTimeInMinutes = try container.decodeIfPresent(
+      Int.self,
+      forKey: .extraTimeInMinutes
+    ) ?? UsageBasedStrategyData.defaultExtraTimeInMinutes
+    enableExtraTimeReduction = try container.decodeIfPresent(
+      Bool.self,
+      forKey: .enableExtraTimeReduction
+    ) ?? UsageBasedStrategyData.defaultExtraTimeReductionEnabled
+    extraTimeCooldownInSeconds = try container.decodeIfPresent(
+      Int.self,
+      forKey: .extraTimeCooldownInSeconds
+    ) ?? UsageBasedStrategyData.defaultExtraTimeCooldownInSeconds
     windowStart = try container.decode(Date.self, forKey: .windowStart)
     warningSent = try container.decodeIfPresent(Bool.self, forKey: .warningSent) ?? false
     allowanceReached = try container.decodeIfPresent(Bool.self, forKey: .allowanceReached) ?? false
+    extraTimeUsedCount = try container.decodeIfPresent(Int.self, forKey: .extraTimeUsedCount) ?? 0
+    extraTimeCooldownUntil = try container.decodeIfPresent(Date.self, forKey: .extraTimeCooldownUntil)
+  }
+
+  mutating func grantExtraTime(at date: Date = Date()) -> Int {
+    if let cooldownUntil = extraTimeCooldownUntil, date < cooldownUntil {
+      return 0
+    }
+
+    let grantAmount = enableExtraTimeReduction
+      ? max(
+        1,
+        Int(
+          ceil(Double(extraTimeInMinutes) / pow(2.0, Double(max(0, extraTimeUsedCount))))
+        )
+      )
+      : extraTimeInMinutes
+
+    allowanceInMinutes += grantAmount
+    extraTimeUsedCount += 1
+    extraTimeCooldownUntil = date.addingTimeInterval(Double(extraTimeCooldownInSeconds))
+    warningSent = false
+    allowanceReached = false
+    return grantAmount
   }
 
   var activityName: DeviceActivityName {
@@ -100,16 +156,53 @@ enum UsageBasedActivityScheduler {
   static let warningEventName = DeviceActivityEvent.Name("usageFiveMinutesRemaining")
 
   private static let stateKey = "usageBasedBlocking.monitoringState"
+  private static let statesKey = "usageBasedBlocking.monitoringStates"
   private static let suite = UserDefaults(suiteName: "group.dev.ambitionsoftware.foqos")!
 
+  static var allStates: [UsageBasedMonitoringState] {
+    if let data = suite.data(forKey: statesKey),
+      let states = try? JSONDecoder().decode([UsageBasedMonitoringState].self, from: data)
+    {
+      return states
+    }
+
+    guard let data = suite.data(forKey: stateKey),
+      let state = try? JSONDecoder().decode(UsageBasedMonitoringState.self, from: data)
+    else {
+      return []
+    }
+
+    return [state]
+  }
+
   static var currentState: UsageBasedMonitoringState? {
-    guard let data = suite.data(forKey: stateKey) else { return nil }
-    return try? JSONDecoder().decode(UsageBasedMonitoringState.self, from: data)
+    allStates.last
   }
 
   static func currentState(for activity: DeviceActivityName) -> UsageBasedMonitoringState? {
-    guard let state = currentState, state.activityName == activity else { return nil }
-    return state
+    allStates.first { $0.activityName == activity }
+  }
+
+  static func state(for sessionId: String) -> UsageBasedMonitoringState? {
+    allStates.first { $0.sessionId == sessionId }
+  }
+
+  static func rebuildRestrictions() {
+    let states = allStates
+    guard !states.isEmpty else {
+      AppBlockerUtil().deactivateUsageBasedRestrictions()
+      return
+    }
+
+    let applicationTokens = Set(states.flatMap { $0.applicationTokens })
+    let categoryTokens = Set(states.flatMap { $0.categoryTokens })
+    let webDomainTokens = Set(states.flatMap { $0.webDomainTokens })
+
+    AppBlockerUtil().activateUsageBasedRestrictions(
+      applicationTokens: applicationTokens,
+      categoryTokens: categoryTokens,
+      webDomainTokens: webDomainTokens
+    )
   }
 
   static func sessionId(from activity: DeviceActivityName) -> String? {
@@ -131,6 +224,9 @@ enum UsageBasedActivityScheduler {
     webDomainTokens: Set<WebDomainToken>,
     allowanceInMinutes: Int,
     enableFiveMinuteWarning: Bool = true,
+    extraTimeInMinutes: Int = UsageBasedStrategyData.defaultExtraTimeInMinutes,
+    enableExtraTimeReduction: Bool = UsageBasedStrategyData.defaultExtraTimeReductionEnabled,
+    extraTimeCooldownInSeconds: Int = UsageBasedStrategyData.defaultExtraTimeCooldownInSeconds,
     at date: Date = Date(),
     calendar: Calendar = .current
   ) throws {
@@ -155,12 +251,17 @@ enum UsageBasedActivityScheduler {
         UsageBasedStrategyData.allowanceRangeInMinutes.upperBound
       ),
       enableFiveMinuteWarning: enableFiveMinuteWarning,
+      extraTimeInMinutes: min(
+        max(extraTimeInMinutes, UsageBasedStrategyData.extraTimeRangeInMinutes.lowerBound),
+        UsageBasedStrategyData.extraTimeRangeInMinutes.upperBound
+      ),
+      enableExtraTimeReduction: enableExtraTimeReduction,
+      extraTimeCooldownInSeconds: min(
+        max(extraTimeCooldownInSeconds, UsageBasedStrategyData.extraTimeCooldownRangeInSeconds.lowerBound),
+        UsageBasedStrategyData.extraTimeCooldownRangeInSeconds.upperBound
+      ),
       windowStart: window.start
     )
-
-    if let previousState = currentState {
-      stop(sessionId: previousState.sessionId)
-    }
 
     save(state)
     do {
@@ -203,6 +304,9 @@ enum UsageBasedActivityScheduler {
     webDomainTokens: Set<WebDomainToken>,
     allowanceInMinutes: Int,
     enableFiveMinuteWarning: Bool = true,
+    extraTimeInMinutes: Int = UsageBasedStrategyData.defaultExtraTimeInMinutes,
+    enableExtraTimeReduction: Bool = UsageBasedStrategyData.defaultExtraTimeReductionEnabled,
+    extraTimeCooldownInSeconds: Int = UsageBasedStrategyData.defaultExtraTimeCooldownInSeconds,
     at date: Date = Date(),
     calendar: Calendar = .current
   ) throws {
@@ -210,14 +314,10 @@ enum UsageBasedActivityScheduler {
       throw UsageBasedActivityError.invalidHourlyWindow
     }
 
-    guard var state = currentState,
-      state.profileId == profileId,
-      state.sessionId == sessionId
+    guard var state = state(for: sessionId),
+      state.profileId == profileId
     else {
-      if let previousState = currentState {
-        stop(sessionId: previousState.sessionId)
-      }
-      AppBlockerUtil().deactivateUsageBasedRestrictions()
+      UsageBasedActivityScheduler.rebuildRestrictions()
       try start(
         profileId: profileId,
         sessionId: sessionId,
@@ -226,6 +326,9 @@ enum UsageBasedActivityScheduler {
         webDomainTokens: webDomainTokens,
         allowanceInMinutes: allowanceInMinutes,
         enableFiveMinuteWarning: enableFiveMinuteWarning,
+        extraTimeInMinutes: extraTimeInMinutes,
+        enableExtraTimeReduction: enableExtraTimeReduction,
+        extraTimeCooldownInSeconds: extraTimeCooldownInSeconds,
         at: date,
         calendar: calendar
       )
@@ -247,6 +350,37 @@ enum UsageBasedActivityScheduler {
     }
   }
 
+  static func grantExtraTime(
+    for activity: DeviceActivityName,
+    at date: Date = Date(),
+    calendar: Calendar = .current
+  ) -> UsageBasedMonitoringState? {
+    guard var state = currentState(for: activity),
+      let window = hourlyWindow(containing: date, calendar: calendar),
+      state.windowStart == window.start
+    else {
+      return nil
+    }
+
+    let grantAmount = state.grantExtraTime(at: date)
+    guard grantAmount > 0 else {
+      return nil
+    }
+
+    save(state)
+    AppBlockerUtil().deactivateUsageBasedRestrictions()
+
+    let center = DeviceActivityCenter()
+    center.stopMonitoring([activity])
+    do {
+      try schedule(state, window: window, calendar: calendar)
+    } catch {
+      return nil
+    }
+
+    return state
+  }
+
   static func stop(sessionId: String) {
     let center = DeviceActivityCenter()
     let activities = center.activities.filter { Self.sessionId(from: $0) == sessionId }
@@ -265,8 +399,8 @@ enum UsageBasedActivityScheduler {
   }
 
   static func warningEvent(for state: UsageBasedMonitoringState) -> DeviceActivityEvent? {
-    guard state.enableFiveMinuteWarning, state.allowanceInMinutes > 5 else { return nil }
-    return event(for: state, thresholdInMinutes: state.allowanceInMinutes - 5)
+    guard state.enableFiveMinuteWarning, state.allowanceInMinutes > 1 else { return nil }
+    return event(for: state, thresholdInMinutes: state.allowanceInMinutes - 1)
   }
 
   static func markWarningSent(
@@ -344,13 +478,25 @@ enum UsageBasedActivityScheduler {
   }
 
   private static func save(_ state: UsageBasedMonitoringState) {
-    guard let data = try? JSONEncoder().encode(state) else { return }
-    suite.set(data, forKey: stateKey)
+    var states = allStates.filter { $0.sessionId != state.sessionId }
+    states.append(state)
+
+    guard let data = try? JSONEncoder().encode(states) else { return }
+    suite.set(data, forKey: statesKey)
+    suite.removeObject(forKey: stateKey)
   }
 
   private static func clear(sessionId: String) {
-    guard currentState?.sessionId == sessionId else { return }
-    suite.removeObject(forKey: stateKey)
+    let states = allStates.filter { $0.sessionId != sessionId }
+
+    if states.isEmpty {
+      suite.removeObject(forKey: statesKey)
+      suite.removeObject(forKey: stateKey)
+      return
+    }
+
+    guard let data = try? JSONEncoder().encode(states) else { return }
+    suite.set(data, forKey: statesKey)
   }
 }
 

@@ -35,12 +35,12 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
 
     log.info("intervalDidEnd for activity: \(activity.rawValue)")
     if UsageBasedActivityScheduler.currentState(for: activity) != nil {
-      appBlocker.deactivateUsageBasedRestrictions()
       do {
         try UsageBasedActivityScheduler.advance(after: activity)
       } catch {
         log.error("Failed to schedule the next hourly usage interval: \(error.localizedDescription)")
       }
+      UsageBasedActivityScheduler.rebuildRestrictions()
       return
     }
 

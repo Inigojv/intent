@@ -12,7 +12,6 @@ final class NFCSoftUnblockBlockingStrategy: BlockingStrategy {
 
   var usesNFC: Bool = true
   var startsManually: Bool = true
-  var allowsTimedBreaks: Bool = false
   var supportsAllowMode: Bool = false
   var startViewPresentationDetents: Set<PresentationDetent> = [.large]
 

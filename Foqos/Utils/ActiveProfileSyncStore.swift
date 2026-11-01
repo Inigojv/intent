@@ -9,44 +9,23 @@ enum ActiveProfileSyncStore {
     session: SharedData.SessionSnapshot?,
     profile: SharedData.ProfileSnapshot?
   ) {
-    let record: ActiveProfileSyncRecord
+    // Mac sync has been retired from the app. Keep the hook but do not publish any active profile sync state.
+    let record = ActiveProfileSyncRecord(
+      profileId: nil,
+      profileName: nil,
+      sessionId: nil,
+      domains: [],
+      domainMode: .block,
+      state: .inactive,
+      updatedAt: Date()
+    )
 
-    if let session, session.endTime == nil,
-      let profile, profile.id == session.blockedProfileId, profile.enableMacSync == true
-    {
-      record = ActiveProfileSyncRecord(
-        profileId: profile.id,
-        profileName: profile.name,
-        sessionId: session.id,
-        domains: FilterRules.normalize(profile.domains ?? []),
-        domainMode: profile.enableAllowModeDomains ? .allowOnly : .block,
-        state: state(for: session, profile: profile),
-        updatedAt: Date()
-      )
-    } else {
-      record = ActiveProfileSyncRecord(
-        profileId: nil,
-        profileName: nil,
-        sessionId: nil,
-        domains: [],
-        domainMode: .block,
-        state: .inactive,
-        updatedAt: Date()
-      )
-    }
     do {
       let data = try JSONEncoder().encode(record)
       let store = NSUbiquitousKeyValueStore.default
       store.set(data, forKey: ActiveProfileSyncRecord.storeKey)
-      // Hand off the local update before the monitor callback returns. This is not a delivery acknowledgement.
-      let accepted = store.synchronize()
-      log.info(
-        "Profile sync update: state=\(record.state.rawValue, privacy: .public) bytes=\(data.count) synchronizeAccepted=\(accepted)"
-      )
-      if !accepted {
-        log.error(
-          "iCloud did not accept profile synchronization; check availability and entitlements")
-      }
+      _ = store.synchronize()
+      log.info("Profile sync disabled for this app build.")
     } catch {
       log.error("Could not encode the profile sync record")
     }

@@ -189,9 +189,7 @@ struct SettingsView: View {
           strategyManager.resetBlockingState(context: context)
         }
       } message: {
-        Text(
-          "Clear stuck restrictions on this iPhone and your synced Mac. Your profiles and history will be kept."
-        )
+        Text("Clear stuck restrictions on this iPhone. Your profiles and history will be kept.")
       }
       .sheet(isPresented: $showDebugView) {
         DebugView()

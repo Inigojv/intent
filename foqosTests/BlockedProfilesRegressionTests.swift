@@ -51,15 +51,15 @@ final class BlockedProfilesRegressionTests: ModelRegressionTestCase {
 
   func testTimedBreakEligibilityUsesStrategyAndLegacyFallback() {
     let profile = BlockedProfiles(name: "Focus")
-    for id in [NFCSoftUnblockBlockingStrategy.id, QRSoftUnblockBlockingStrategy.id] {
-      profile.blockingStrategyId = id
-      XCTAssertFalse(profile.allowsTimedBreaks)
-    }
+    profile.blockingStrategyId = UsageBasedBlockingStrategy.id
+    XCTAssertFalse(profile.allowsTimedBreaks)
+
     for id in [
       nil, "unknown-strategy", ManualBlockingStrategy.id, NFCBlockingStrategy.id,
       QRCodeBlockingStrategy.id, NFCTimerBlockingStrategy.id, QRTimerBlockingStrategy.id,
       ShortcutTimerBlockingStrategy.id, NFCManualBlockingStrategy.id, QRManualBlockingStrategy.id,
       NFCPauseTimerBlockingStrategy.id, QRPauseTimerBlockingStrategy.id,
+      NFCSoftUnblockBlockingStrategy.id, QRSoftUnblockBlockingStrategy.id,
     ] as [String?] {
       profile.blockingStrategyId = id
       XCTAssertTrue(profile.allowsTimedBreaks, id ?? "nil")
@@ -165,7 +165,7 @@ final class BlockedProfilesRegressionTests: ModelRegressionTestCase {
       breakTimeInMinutes: 8,
       allowMultipleBreaks: true, enableStrictMode: true, enableBlockAppInstallation: true,
       enableAllowMode: true, enableAllowModeDomains: true, enableSafariBlocking: false,
-      enableAdultContentBlocking: true, enableMacSync: false, order: 5, domains: ["example.org"],
+      enableAdultContentBlocking: true, order: 5, domains: ["example.org"],
       physicalUnblockItems: .some(items), schedule: schedule, disableBackgroundStops: true,
       enableEmergencyUnblock: false)
     XCTAssertTrue(updated === profile)
@@ -187,7 +187,6 @@ final class BlockedProfilesRegressionTests: ModelRegressionTestCase {
     XCTAssertTrue(fetched.enableAllowModeDomains)
     XCTAssertFalse(fetched.enableSafariBlocking)
     XCTAssertTrue(fetched.enableAdultContentBlocking)
-    XCTAssertFalse(fetched.enableMacSync)
     XCTAssertEqual(fetched.order, 5)
     XCTAssertEqual(fetched.domains, ["example.org"])
     XCTAssertEqual(fetched.physicalUnblockItems?.first?.name, "Desk")
@@ -248,20 +247,21 @@ final class BlockedProfilesRegressionTests: ModelRegressionTestCase {
     XCTAssertEqual(profile.strategyData, Data([1]))
   }
 
-  func testMacSyncDisablesIncompatibleSettingsOnInitializationAndUpdate() throws {
+  func testDomainAndAdultWebsiteRulesRemainIndependent() throws {
     let profile = BlockedProfiles(
-      name: "Mac", enableAllowModeDomains: true, enableAdultContentBlocking: true,
-      enableMacSync: true)
-    XCTAssertFalse(profile.enableAllowModeDomains)
-    XCTAssertFalse(profile.enableAdultContentBlocking)
+      name: "Web Settings",
+      enableAllowModeDomains: true,
+      enableAdultContentBlocking: true
+    )
+    XCTAssertTrue(profile.enableAllowModeDomains)
+    XCTAssertTrue(profile.enableAdultContentBlocking)
+
     context.insert(profile)
     _ = try BlockedProfiles.updateProfile(
-      profile, in: context, enableAllowModeDomains: true, enableAdultContentBlocking: true)
-    XCTAssertFalse(profile.enableAllowModeDomains)
-    XCTAssertFalse(profile.enableAdultContentBlocking)
-    _ = try BlockedProfiles.updateProfile(
-      profile, in: context, enableAllowModeDomains: true, enableAdultContentBlocking: true,
-      enableMacSync: false)
+      profile, in: context,
+      enableAllowModeDomains: true,
+      enableAdultContentBlocking: true
+    )
     XCTAssertTrue(profile.enableAllowModeDomains)
     XCTAssertTrue(profile.enableAdultContentBlocking)
   }

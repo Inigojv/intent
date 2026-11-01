@@ -162,7 +162,10 @@ class ScheduleTimerActivity: TimerActivity {
         categoryTokens: profile.selectedActivity.categoryTokens,
         webDomainTokens: profile.selectedActivity.webDomainTokens,
         allowanceInMinutes: configuration.allowanceInMinutes,
-        enableFiveMinuteWarning: configuration.enableFiveMinuteWarning
+        enableFiveMinuteWarning: configuration.enableFiveMinuteWarning,
+        extraTimeInMinutes: configuration.extraTimeInMinutes,
+        enableExtraTimeReduction: configuration.enableExtraTimeReduction,
+        extraTimeCooldownInSeconds: configuration.extraTimeCooldownInSeconds
       )
     } catch {
       log.error("Failed to resume scheduled usage monitoring: \(error.localizedDescription)")
@@ -181,7 +184,10 @@ class ScheduleTimerActivity: TimerActivity {
       categoryTokens: profile.selectedActivity.categoryTokens,
       webDomainTokens: profile.selectedActivity.webDomainTokens,
       allowanceInMinutes: configuration.allowanceInMinutes,
-      enableFiveMinuteWarning: configuration.enableFiveMinuteWarning
+      enableFiveMinuteWarning: configuration.enableFiveMinuteWarning,
+      extraTimeInMinutes: configuration.extraTimeInMinutes,
+      enableExtraTimeReduction: configuration.enableExtraTimeReduction,
+      extraTimeCooldownInSeconds: configuration.extraTimeCooldownInSeconds
     )
   }
 }

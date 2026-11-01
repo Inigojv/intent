@@ -53,7 +53,7 @@ class ModelRegressionTestCase: XCTestCase {
       customReminderMessage: "Keep focusing", enableBreaks: true, breakTimeInMinutes: 7,
       allowMultipleBreaks: true, enableStrictMode: true, enableBlockAppInstallation: true,
       enableAllowMode: true, enableAllowModeDomains: true, enableSafariBlocking: false,
-      enableAdultContentBlocking: true, enableMacSync: false, order: 9,
+      enableAdultContentBlocking: true, order: 9,
       domains: ["example.com", "example.org"],
       physicalUnblockItems: [
         PhysicalUnblockItem(name: "Desk", type: .qrCode, codeValue: "https://example.com")
@@ -109,7 +109,6 @@ class ModelRegressionTestCase: XCTestCase {
     XCTAssertEqual(
       snapshot.enableAdultContentBlocking, profile.enableAdultContentBlocking, file: file,
       line: line)
-    XCTAssertEqual(snapshot.enableMacSync, profile.enableMacSync, file: file, line: line)
     XCTAssertEqual(snapshot.domains, profile.domains, file: file, line: line)
     XCTAssertEqual(
       snapshot.physicalUnblockItems, profile.physicalUnblockItems, file: file, line: line)

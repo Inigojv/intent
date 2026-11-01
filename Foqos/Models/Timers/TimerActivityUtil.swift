@@ -36,15 +36,8 @@ class TimerActivityUtil {
     let currentSession = SharedData.getActiveSharedSession()
     guard currentSession != previousSession else { return }
 
-    let currentProfile = getProfile(for: currentSession, callbackProfile: callbackProfile)
-    // A missing profile must not turn an unrelated active session into an inactive cloud record.
-    guard currentSession == nil || currentProfile != nil else { return }
-    guard
-      currentProfile?.enableMacSync == true
-        || getProfile(for: previousSession, callbackProfile: callbackProfile)?.enableMacSync == true
-    else { return }
-
-    ActiveProfileSyncStore.publish(session: currentSession, profile: currentProfile)
+    // Mac sync has been retired; no cloud profile state is published from the app anymore.
+    ActiveProfileSyncStore.publish(session: nil, profile: nil)
   }
 
   private static func getTimerParts(from activity: DeviceActivityName) -> (
