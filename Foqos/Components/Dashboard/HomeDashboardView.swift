@@ -4,6 +4,12 @@ import SwiftUI
 struct HomeDashboardView: View {
   @EnvironmentObject private var strategyManager: StrategyManager
 
+  @Query(
+    filter: #Predicate<BlockedProfileSession> { $0.endTime == nil },
+    sort: \BlockedProfileSession.startTime,
+    order: .reverse
+  ) private var activeSessions: [BlockedProfileSession]
+
   let profiles: [BlockedProfiles]
   let sessions: [BlockedProfileSession]
   let alerts: [HomeAlert]
@@ -41,6 +47,26 @@ struct HomeDashboardView: View {
       : activeSessionProfile
   }
 
+  private var hasActiveOnDemandSession: Bool {
+    activeSessions.contains { $0.blockedProfile.blockingStrategyId != UsageBasedBlockingStrategy.id }
+  }
+
+  private var activeProfileIds: Set<UUID> {
+    Set(activeSessions.map { $0.blockedProfile.id })
+  }
+
+  private var pausedProfileIds: Set<UUID> {
+    Set(activeSessions.filter { $0.isPauseActive }.map { $0.blockedProfile.id })
+  }
+
+  private var stopCountdownProfileId: UUID? {
+    guard let countdownSessionId = strategyManager.stopCountdownSessionId else {
+      return nil
+    }
+
+    return activeSessions.first(where: { $0.id == countdownSessionId })?.blockedProfile.id
+  }
+
   var body: some View {
     HomeDashboardLayout(preferredCompactColumn: $preferredCompactColumn) { showsProfileInsights in
       dashboardContent(showsProfileInsights: showsProfileInsights)
@@ -73,9 +99,11 @@ struct HomeDashboardView: View {
           HomeProfilesByStrategyListView(
             profiles: profiles,
             isBlocking: strategyManager.isBlocking,
-            activeSessionProfileId: strategyManager.activeSession?.blockedProfile.id,
+            hasActiveOnDemandSession: hasActiveOnDemandSession,
+            activeProfileIds: activeProfileIds,
             elapsedTime: strategyManager.elapsedTime,
-            isPauseActive: strategyManager.isPauseActive,
+            pausedProfileIds: pausedProfileIds,
+            stopCountdownProfileId: stopCountdownProfileId,
             stopCountdownRemaining: strategyManager.stopCountdownRemaining,
             isHardModeActionLocked:
               strategyManager.activeSession?.isSessionActionLockedByHardMode() ?? false,
@@ -91,9 +119,11 @@ struct HomeDashboardView: View {
           HomeProfilesListView(
             profiles: profiles,
             isBlocking: strategyManager.isBlocking,
-            activeSessionProfileId: strategyManager.activeSession?.blockedProfile.id,
+            hasActiveOnDemandSession: hasActiveOnDemandSession,
+            activeProfileIds: activeProfileIds,
             elapsedTime: strategyManager.elapsedTime,
-            isPauseActive: strategyManager.isPauseActive,
+            pausedProfileIds: pausedProfileIds,
+            stopCountdownProfileId: stopCountdownProfileId,
             stopCountdownRemaining: strategyManager.stopCountdownRemaining,
             isHardModeActionLocked:
               strategyManager.activeSession?.isSessionActionLockedByHardMode() ?? false,

@@ -35,7 +35,7 @@ struct StartProfilePickerView: View {
   }
 
   private var canGo: Bool {
-    selectedProfile != nil && !isBlocking
+    selectedProfile != nil
   }
 
   var body: some View {
@@ -50,10 +50,6 @@ struct StartProfilePickerView: View {
         } else {
           ScrollView {
             VStack(spacing: 10) {
-              if isBlocking {
-                activeSessionNotice
-              }
-
               ForEach(profiles) { profile in
                 StartProfilePickerRow(
                   profile: profile,
@@ -130,7 +126,7 @@ struct StartProfilePickerView: View {
   }
 
   private func goTapped() {
-    guard let selectedProfile, !isBlocking else { return }
+    guard let selectedProfile else { return }
     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     onGoTapped(selectedProfile)
     dismiss()

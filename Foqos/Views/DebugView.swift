@@ -1,5 +1,6 @@
 import DeviceActivity
 import FamilyControls
+import ManagedSettings
 import SwiftData
 import SwiftUI
 
@@ -10,12 +11,42 @@ struct DebugView: View {
   @EnvironmentObject var strategyManager: StrategyManager
 
   @Query(sort: \BlockedProfiles.order) private var allProfiles: [BlockedProfiles]
+  @Query(
+    filter: #Predicate<BlockedProfileSession> { $0.endTime == nil },
+    sort: \BlockedProfileSession.startTime,
+    order: .reverse
+  ) private var activeSessions: [BlockedProfileSession]
 
   @State private var activeProfile: BlockedProfiles?
   @State private var showCopyConfirmation = false
 
   private var deviceActivities: [DeviceActivityName] {
     DeviceActivityCenterUtil.getDeviceActivities()
+  }
+
+  private var activeUsageSessions: [BlockedProfileSession] {
+    activeSessions.filter { $0.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id }
+  }
+
+  private var usageMonitoringStates: [UsageBasedMonitoringState] {
+    UsageBasedActivityScheduler.allStates
+  }
+
+  private var reachedUsageStates: [UsageBasedMonitoringState] {
+    usageMonitoringStates.filter { $0.allowanceReached }
+  }
+
+  private var staleUsageStates: [UsageBasedMonitoringState] {
+    let activeUsageSessionIDs = Set(activeUsageSessions.map(\.id))
+    return usageMonitoringStates.filter { !activeUsageSessionIDs.contains($0.sessionId) }
+  }
+
+  private var usageCombinedReachedRestrictions: (
+    applicationTokens: Set<ApplicationToken>,
+    categoryTokens: Set<ActivityCategoryToken>,
+    webDomainTokens: Set<WebDomainToken>
+  ) {
+    UsageBasedActivityScheduler.combinedReachedRestrictions(for: reachedUsageStates)
   }
 
   var body: some View {
@@ -25,6 +56,10 @@ struct DebugView: View {
           // Strategy Manager Section (always shown)
           DebugSection(title: "Strategy Manager") {
             StrategyManagerDebugCard(strategyManager: strategyManager)
+          }
+
+          DebugSection(title: "Usage-Based Diagnostics") {
+            usageBasedDiagnosticsCard
           }
 
           // Active Session Section (if available)
@@ -128,6 +163,40 @@ struct DebugView: View {
     markdown += "- **Has Active Session:** \(strategyManager.activeSession != nil ? "Yes" : "No")\n"
     markdown += "- **Elapsed Time:** \(Int(strategyManager.elapsedTime)) seconds\n"
     markdown += "- **Timer Active:** \(strategyManager.timer != nil ? "Yes" : "No")\n\n"
+
+    markdown += "## Usage-Based Diagnostics\n\n"
+    markdown += "- **Active Usage Sessions:** \(activeUsageSessions.count)\n"
+    markdown += "- **Monitoring States:** \(usageMonitoringStates.count)\n"
+    markdown += "- **Reached States:** \(reachedUsageStates.count)\n"
+    markdown += "- **Stale States:** \(staleUsageStates.count)\n"
+    markdown += "- **Stop Countdown Remaining:** \(strategyManager.stopCountdownRemaining.map(String.init) ?? "nil")\n"
+    markdown += "- **Stop Countdown Session ID:** \(strategyManager.stopCountdownSessionId ?? "nil")\n"
+    markdown += "- **Reached Union App Tokens:** \(usageCombinedReachedRestrictions.applicationTokens.count)\n"
+    markdown += "- **Reached Union Category Tokens:** \(usageCombinedReachedRestrictions.categoryTokens.count)\n"
+    markdown += "- **Reached Union Web Domains:** \(usageCombinedReachedRestrictions.webDomainTokens.count)\n\n"
+
+    if !activeUsageSessions.isEmpty {
+      markdown += "### Active Usage Sessions\n\n"
+      for session in activeUsageSessions {
+        markdown += "- **\(session.blockedProfile.name)**\n"
+        markdown += "  - Session ID: \(session.id)\n"
+        markdown += "  - Profile ID: \(session.blockedProfile.id.uuidString)\n"
+        markdown += "  - Pause Active: \(session.isPauseActive ? "Yes" : "No")\n"
+      }
+      markdown += "\n"
+    }
+
+    if !usageMonitoringStates.isEmpty {
+      markdown += "### Monitoring States\n\n"
+      for state in usageMonitoringStates {
+        markdown += "- **Session \(state.sessionId)**\n"
+        markdown += "  - Profile ID: \(state.profileId.uuidString)\n"
+        markdown += "  - Used/Allowance: \(state.usedMinutes)/\(state.allowanceInMinutes)\n"
+        markdown += "  - Reached: \(state.allowanceReached ? "Yes" : "No")\n"
+        markdown += "  - Window Start: \(DateFormatters.formatDate(state.windowStart))\n"
+      }
+      markdown += "\n"
+    }
 
     // Active Session Section (if available)
     if let session = strategyManager.activeSession {
@@ -373,6 +442,81 @@ struct DebugView: View {
       profileConfigurations: configurations,
       activities: deviceActivities
     )
+  }
+
+  private var usageBasedDiagnosticsCard: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Group {
+        DebugRow(label: "Active Usage Sessions", value: "\(activeUsageSessions.count)")
+        DebugRow(label: "Monitoring States", value: "\(usageMonitoringStates.count)")
+        DebugRow(label: "Reached States", value: "\(reachedUsageStates.count)")
+        DebugRow(label: "Stale States", value: "\(staleUsageStates.count)")
+      }
+
+      Divider()
+
+      Group {
+        DebugRow(
+          label: "Stop Countdown Remaining",
+          value: strategyManager.stopCountdownRemaining.map(String.init) ?? "nil"
+        )
+        DebugRow(
+          label: "Stop Countdown Session ID",
+          value: strategyManager.stopCountdownSessionId ?? "nil"
+        )
+      }
+
+      Divider()
+
+      Group {
+        DebugRow(
+          label: "Reached Union App Tokens",
+          value: "\(usageCombinedReachedRestrictions.applicationTokens.count)"
+        )
+        DebugRow(
+          label: "Reached Union Category Tokens",
+          value: "\(usageCombinedReachedRestrictions.categoryTokens.count)"
+        )
+        DebugRow(
+          label: "Reached Union Web Domains",
+          value: "\(usageCombinedReachedRestrictions.webDomainTokens.count)"
+        )
+      }
+
+      if !activeUsageSessions.isEmpty {
+        Divider()
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Active Usage Sessions:")
+            .font(.caption)
+            .foregroundColor(.secondary)
+
+          ForEach(activeUsageSessions, id: \.id) { session in
+            Text("• \(session.blockedProfile.name) (\(session.id))")
+              .font(.caption)
+              .foregroundColor(.primary)
+          }
+        }
+      }
+
+      if !usageMonitoringStates.isEmpty {
+        Divider()
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Monitoring States:")
+            .font(.caption)
+            .foregroundColor(.secondary)
+
+          ForEach(Array(usageMonitoringStates.enumerated()), id: \.offset) { _, state in
+            Text(
+              "• \(state.sessionId)  used \(state.usedMinutes)/\(state.allowanceInMinutes)  reached=\(state.allowanceReached)"
+            )
+            .font(.caption)
+            .foregroundColor(.primary)
+          }
+        }
+      }
+    }
   }
 }
 

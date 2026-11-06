@@ -25,6 +25,12 @@ struct HomeView: View {
     order: .reverse
   ) private var recentCompletedSessions: [BlockedProfileSession]
 
+  @Query(
+    filter: #Predicate<BlockedProfileSession> { $0.endTime == nil },
+    sort: \BlockedProfileSession.startTime,
+    order: .reverse
+  ) private var activeSessions: [BlockedProfileSession]
+
   @State private var presentation = HomePresentationState()
   @AppStorage("showIntroScreen") private var showIntroScreen = true
 
@@ -163,7 +169,11 @@ struct HomeView: View {
 
   private func startProfile(_ profile: BlockedProfiles) {
     let isUsageBasedProfile = profile.blockingStrategyId == UsageBasedBlockingStrategy.id
-    let isBlockedByOnDemandSession = isBlocking && !isUsageBasedProfile
+    let hasConflictingOnDemandSession = activeSessions.contains {
+      $0.blockedProfile.blockingStrategyId != UsageBasedBlockingStrategy.id
+        && $0.blockedProfile.id != profile.id
+    }
+    let isBlockedByOnDemandSession = !isUsageBasedProfile && hasConflictingOnDemandSession
 
     guard !isBlockedByOnDemandSession else {
       showErrorAlert(message: "Stop the active profile before starting another one.")

@@ -3,9 +3,11 @@ import SwiftUI
 struct HomeProfilesListView: View {
   let profiles: [BlockedProfiles]
   let isBlocking: Bool
-  let activeSessionProfileId: UUID?
+  let hasActiveOnDemandSession: Bool
+  let activeProfileIds: Set<UUID>
   let elapsedTime: TimeInterval
-  let isPauseActive: Bool
+  let pausedProfileIds: Set<UUID>
+  let stopCountdownProfileId: UUID?
   let stopCountdownRemaining: Int?
   var isHardModeActionLocked: Bool = false
   let onManageTapped: () -> Void
@@ -30,9 +32,11 @@ struct HomeProfilesListView: View {
           HomeProfileRow(
             profile: profile,
             isBlocking: isBlocking,
-            isActive: profile.id == activeSessionProfileId,
+            hasActiveOnDemandSession: hasActiveOnDemandSession,
+            isActive: activeProfileIds.contains(profile.id),
             elapsedTime: elapsedTime,
-            isPauseActive: isPauseActive,
+            isPauseActive: pausedProfileIds.contains(profile.id),
+            isStopCountdownActive: stopCountdownProfileId == profile.id,
             stopCountdownRemaining: stopCountdownRemaining,
             isHardModeActionLocked: isHardModeActionLocked,
             isSelected: profile.id == selectedProfileId,
@@ -75,9 +79,11 @@ struct HomeProfilesListView: View {
 struct HomeProfilesByStrategyListView: View {
   let profiles: [BlockedProfiles]
   let isBlocking: Bool
-  let activeSessionProfileId: UUID?
+  let hasActiveOnDemandSession: Bool
+  let activeProfileIds: Set<UUID>
   let elapsedTime: TimeInterval
-  let isPauseActive: Bool
+  let pausedProfileIds: Set<UUID>
+  let stopCountdownProfileId: UUID?
   let stopCountdownRemaining: Int?
   let isHardModeActionLocked: Bool
   let onManageUsageBasedTapped: () -> Void
@@ -101,9 +107,11 @@ struct HomeProfilesByStrategyListView: View {
         title: "Usage based",
         profiles: usageBasedProfiles,
         isBlocking: isBlocking,
-        activeSessionProfileId: activeSessionProfileId,
+        hasActiveOnDemandSession: hasActiveOnDemandSession,
+        activeProfileIds: activeProfileIds,
         elapsedTime: elapsedTime,
-        isPauseActive: isPauseActive,
+        pausedProfileIds: pausedProfileIds,
+        stopCountdownProfileId: stopCountdownProfileId,
         stopCountdownRemaining: stopCountdownRemaining,
         isHardModeActionLocked: isHardModeActionLocked,
         onManageTapped: onManageUsageBasedTapped,
@@ -118,9 +126,11 @@ struct HomeProfilesByStrategyListView: View {
           title: "On-demand",
           profiles: onDemandProfiles,
           isBlocking: isBlocking,
-          activeSessionProfileId: activeSessionProfileId,
+          hasActiveOnDemandSession: hasActiveOnDemandSession,
+          activeProfileIds: activeProfileIds,
           elapsedTime: elapsedTime,
-          isPauseActive: isPauseActive,
+          pausedProfileIds: pausedProfileIds,
+          stopCountdownProfileId: stopCountdownProfileId,
           stopCountdownRemaining: stopCountdownRemaining,
           isHardModeActionLocked: isHardModeActionLocked,
           onManageTapped: onManageOnDemandTapped,
@@ -138,9 +148,11 @@ private struct HomeProfilesStrategySection: View {
   let title: String
   let profiles: [BlockedProfiles]
   let isBlocking: Bool
-  let activeSessionProfileId: UUID?
+  let hasActiveOnDemandSession: Bool
+  let activeProfileIds: Set<UUID>
   let elapsedTime: TimeInterval
-  let isPauseActive: Bool
+  let pausedProfileIds: Set<UUID>
+  let stopCountdownProfileId: UUID?
   let stopCountdownRemaining: Int?
   let isHardModeActionLocked: Bool
   let onManageTapped: () -> Void
@@ -163,9 +175,11 @@ private struct HomeProfilesStrategySection: View {
           HomeProfileRow(
             profile: profile,
             isBlocking: isBlocking,
-            isActive: profile.id == activeSessionProfileId,
+            hasActiveOnDemandSession: hasActiveOnDemandSession,
+            isActive: activeProfileIds.contains(profile.id),
             elapsedTime: elapsedTime,
-            isPauseActive: isPauseActive,
+            isPauseActive: pausedProfileIds.contains(profile.id),
+            isStopCountdownActive: stopCountdownProfileId == profile.id,
             stopCountdownRemaining: stopCountdownRemaining,
             isHardModeActionLocked: isHardModeActionLocked,
             isSelected: false,
@@ -204,9 +218,11 @@ private struct HomeProfileRow: View {
 
   let profile: BlockedProfiles
   let isBlocking: Bool
+  let hasActiveOnDemandSession: Bool
   let isActive: Bool
   let elapsedTime: TimeInterval
   let isPauseActive: Bool
+  let isStopCountdownActive: Bool
   let stopCountdownRemaining: Int?
   let isHardModeActionLocked: Bool
   let isSelected: Bool
@@ -222,7 +238,11 @@ private struct HomeProfileRow: View {
   }
 
   private var canStart: Bool {
-    !isBlocking
+    if profile.blockingStrategyId == UsageBasedBlockingStrategy.id {
+      return true
+    }
+
+    return !hasActiveOnDemandSession
   }
 
   private var canStop: Bool {
@@ -265,19 +285,33 @@ private struct HomeProfileRow: View {
     max(0, usageTotalMinutes - usageUsedMinutes)
   }
 
-  private var isStopCountdownActive: Bool {
-    guard isActive else { return false }
+  private enum UsageVisualState {
+    case inactive
+    case paused
+    case blocking
+    case extraTime
+    case active
+  }
+
+  private var usageVisualState: UsageVisualState {
+    guard isActive else { return .inactive }
+    if isPauseActive { return .paused }
+    if strategyState?.allowanceReached == true { return .blocking }
+    if let state = strategyState, state.allowanceInMinutes > usageConfiguration.allowanceInMinutes {
+      return .extraTime
+    }
+    return .active
+  }
+
+  private var isStopCountdownVisible: Bool {
+    guard isActive, isStopCountdownActive else { return false }
     guard let remaining = stopCountdownRemaining else { return false }
     return remaining > 0
   }
 
   private var usageStatusText: String? {
-    if isStopCountdownActive, let remaining = stopCountdownRemaining {
+    if isStopCountdownVisible, let remaining = stopCountdownRemaining {
       return "Disabling in \(remaining)s"
-    }
-
-    if isPauseActive {
-      return "Paused"
     }
 
     if profile.schedule?.isActive == true {
@@ -298,17 +332,33 @@ private struct HomeProfileRow: View {
   }
 
   private var usageBarColor: Color {
-    guard isActive else { return .gray }
-    if strategyState?.allowanceReached == true {
-      return .red
-    }
-    if let state = strategyState, state.allowanceInMinutes > usageConfiguration.allowanceInMinutes {
-      return .orange
-    }
-    if strategyState == nil {
+    switch usageVisualState {
+    case .inactive:
       return .gray
+    case .paused:
+      return .blue
+    case .blocking:
+      return .red
+    case .extraTime:
+      return .yellow
+    case .active:
+      return strategyState == nil ? .gray : .green
     }
-    return .green
+  }
+
+  private var usageStateLabelText: String {
+    switch usageVisualState {
+    case .inactive:
+      return "Inactive"
+    case .paused:
+      return "Paused"
+    case .blocking:
+      return "Blocking"
+    case .extraTime:
+      return "Extra Time"
+    case .active:
+      return "Active"
+    }
   }
 
   private var usageBarProgress: CGFloat {
@@ -447,15 +497,21 @@ private struct HomeProfileRow: View {
 
       VStack(alignment: .leading, spacing: 6) {
         HStack {
-          Text("\(usageUsedMinutes)m / \(usageTotalMinutes)m")
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
+          HStack(spacing: 6) {
+            Circle()
+              .fill(usageBarColor)
+              .frame(width: 8, height: 8)
+
+            Text(usageStateLabelText)
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+          }
 
           Spacer()
 
           if let statusText = usageStatusText {
             HStack(spacing: 5) {
-              if isStopCountdownActive {
+              if isStopCountdownVisible {
                 Image(systemName: "timer")
                   .font(.system(size: 11, weight: .semibold))
                   .foregroundStyle(.orange)
@@ -463,7 +519,7 @@ private struct HomeProfileRow: View {
 
               Text(statusText)
                 .font(.caption)
-                .foregroundStyle(isStopCountdownActive ? .orange : .secondary)
+                .foregroundStyle(isStopCountdownVisible ? .orange : .secondary)
             }
           }
         }
@@ -507,7 +563,7 @@ private struct HomeProfileRow: View {
       return "Start"
     }
 
-    if isStopCountdownActive, let remaining = stopCountdownRemaining {
+    if isStopCountdownVisible, let remaining = stopCountdownRemaining {
       return "Stop (\(remaining)s)"
     }
 
@@ -520,7 +576,7 @@ private struct HomeProfileRow: View {
       return
     }
 
-    if isStopCountdownActive {
+    if isStopCountdownVisible {
       strategyManager.confirmStopCountdown(context: context)
       return
     }
@@ -543,7 +599,7 @@ private struct HomeProfileRow: View {
       .padding(.vertical, 8)
     }
     .buttonStyle(.borderedProminent)
-    .tint(isStopCountdownActive ? .orange : themeManager.themeColor)
+    .tint(isStopCountdownVisible ? .orange : themeManager.themeColor)
     .disabled(isActive ? !canStop : !canStart)
     .accessibilityLabel(isActive ? "Stop or confirm stop for \(profile.name)" : "Start \(profile.name)")
   }

@@ -35,6 +35,7 @@ class StrategyManager: ObservableObject {
   @Published var activeSession: BlockedProfileSession?
   @Published var stopCountdownRemaining: Int?
   @Published var extraTimeCooldownRemaining: Int?
+  @Published var stopCountdownSessionId: String?
 
   @Published var showCustomStrategyView: Bool = false
   @Published var customStrategyView: (any View)? = nil
@@ -92,6 +93,8 @@ class StrategyManager: ObservableObject {
     activeSession = getActiveSession(context: context)
     ActiveProfileSyncStore.publish(session: activeSession)
 
+    pruneStaleUsageMonitoring(context: context)
+
     if let session = activeSession,
       session.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id
     {
@@ -109,27 +112,6 @@ class StrategyManager: ObservableObject {
         )
       } catch {
         errorMessage = "Failed to resume hourly usage monitoring: \(error.localizedDescription)"
-      }
-    } else {
-      let activeSessions = (try? context.fetch(
-        FetchDescriptor<BlockedProfileSession>(predicate: #Predicate { $0.endTime == nil })
-      )) ?? []
-      let activeUsageSessionIDs = Set(
-        activeSessions.filter {
-          $0.blockedProfile.blockingStrategyId == "UsageBasedBlockingStrategy"
-        }.map(\.id)
-      )
-
-      let staleUsageStates = UsageBasedActivityScheduler.allStates.filter {
-        !activeUsageSessionIDs.contains($0.sessionId)
-      }
-
-      for state in staleUsageStates {
-        UsageBasedActivityScheduler.stop(sessionId: state.sessionId)
-      }
-
-      if activeUsageSessionIDs.isEmpty && !UsageBasedActivityScheduler.allStates.isEmpty {
-        appBlocker.deactivateUsageBasedRestrictions()
       }
     }
 
@@ -154,19 +136,47 @@ class StrategyManager: ObservableObject {
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
   }
 
+  private func pruneStaleUsageMonitoring(context: ModelContext) {
+    let activeSessions = (try? context.fetch(
+      FetchDescriptor<BlockedProfileSession>(predicate: #Predicate { $0.endTime == nil })
+    )) ?? []
+
+    let activeUsageSessionIDs = Set(
+      activeSessions.filter {
+        $0.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id
+      }.map(\.id)
+    )
+
+    let staleUsageStates = UsageBasedActivityScheduler.allStates.filter {
+      !activeUsageSessionIDs.contains($0.sessionId)
+    }
+
+    for state in staleUsageStates {
+      UsageBasedActivityScheduler.stop(sessionId: state.sessionId)
+    }
+
+    if activeUsageSessionIDs.isEmpty && !UsageBasedActivityScheduler.allStates.isEmpty {
+      appBlocker.deactivateUsageBasedRestrictions()
+    }
+  }
+
   func toggleBlocking(context: ModelContext, activeProfile: BlockedProfiles?) {
     guard let activeProfile else {
-      stopBlocking(context: context)
+      stopBlocking(context: context, session: activeSession)
       return
     }
 
     if let activeSession = activeSessionForProfile(context: context, profileID: activeProfile.id) {
       if activeProfile.stopDelayInSeconds > 0 {
-        beginUsageBasedStopCountdown(context: context, profile: activeProfile)
+        beginUsageBasedStopCountdown(
+          context: context,
+          profile: activeProfile,
+          session: activeSession
+        )
         return
       }
 
-      stopBlocking(context: context)
+      stopBlocking(context: context, session: activeSession)
       return
     }
 
@@ -181,7 +191,13 @@ class StrategyManager: ObservableObject {
     stopCountdownTimer?.invalidate()
     stopCountdownTimer = nil
     stopCountdownRemaining = nil
-    forceStopSession(context: context)
+    let targetSession = stopCountdownSessionId.flatMap { try? BlockedProfileSession.findSession(byID: $0, in: context) }
+    stopCountdownSessionId = nil
+    guard let targetSession else {
+      forceStopSession(context: context, session: activeSession)
+      return
+    }
+    forceStopSession(context: context, session: targetSession)
   }
 
   func toggleBreak(context: ModelContext) {
@@ -269,7 +285,7 @@ class StrategyManager: ObservableObject {
     appBlocker.deactivateRestrictions()
     SoftUnblockGrantScheduler.stopAll()
     SoftUnblockGrantStore.clearAll()
-    handleSessionEnded(profile: profile, shouldScheduleReminder: false)
+    handleSessionEnded(profile: profile, context: context, shouldScheduleReminder: false)
   }
 
   func startTimer() {
@@ -680,7 +696,7 @@ class StrategyManager: ObservableObject {
       case .started(let session):
         self.handleSessionStarted(session: session)
       case .ended(let endedProfile):
-        self.handleSessionEnded(profile: endedProfile)
+        self.handleSessionEnded(profile: endedProfile, context: context)
       }
     }
 
@@ -829,37 +845,48 @@ class StrategyManager: ObservableObject {
 
   private func handleSessionEnded(
     profile: BlockedProfiles,
+    context: ModelContext,
     shouldScheduleReminder: Bool = true
   ) {
     stopCountdownTimer?.invalidate()
     stopCountdownTimer = nil
     stopCountdownRemaining = nil
+    stopCountdownSessionId = nil
     self.dismissView()
 
     // Remove any timers and notifications that were scheduled
     self.timersUtil.cancelAll()
-    self.activeSession = nil
-    ActiveProfileSyncStore.publish(session: nil)
-    self.liveActivityManager.endSessionActivity()
+
+    self.activeSession = getActiveSession(context: context)
+    ActiveProfileSyncStore.publish(session: self.activeSession)
+
+    if let remainingSession = self.activeSession, remainingSession.isActive {
+      self.startTimer()
+      self.liveActivityManager.startSessionActivity(session: remainingSession)
+    } else {
+      self.liveActivityManager.endSessionActivity()
+      self.stopTimer()
+      self.elapsedTime = 0
+      self.sessionDisplayTime = 0
+    }
+
     if shouldScheduleReminder {
       self.scheduleReminder(profile: profile)
     }
 
-    self.stopTimer()
-    self.elapsedTime = 0
-    self.sessionDisplayTime = 0
-
     // Refresh widgets when session ends
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
 
-    // Remove all break timer activities
-    DeviceActivityCenterUtil.removeAllBreakTimerActivities()
+    if self.activeSession == nil {
+      // Remove all break timer activities
+      DeviceActivityCenterUtil.removeAllBreakTimerActivities()
 
-    // Remove all strategy timer activities
-    DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
+      // Remove all strategy timer activities
+      DeviceActivityCenterUtil.removeAllStrategyTimerActivities()
 
-    // Remove all pause timer activities
-    DeviceActivityCenterUtil.removeAllPauseTimerActivities()
+      // Remove all pause timer activities
+      DeviceActivityCenterUtil.removeAllPauseTimerActivities()
+    }
   }
 
   private func dismissView() {
@@ -953,12 +980,13 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  private func stopBlocking(context: ModelContext) {
+  private func stopBlocking(context: ModelContext, session: BlockedProfileSession?) {
     stopCountdownTimer?.invalidate()
     stopCountdownTimer = nil
     stopCountdownRemaining = nil
+    stopCountdownSessionId = nil
 
-    guard let session = activeSession else {
+    guard let session else {
       print(
         "No active session found, calling stop blocking with no session"
       )
@@ -983,18 +1011,23 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  private func beginUsageBasedStopCountdown(context: ModelContext, profile: BlockedProfiles) {
+  private func beginUsageBasedStopCountdown(
+    context: ModelContext,
+    profile: BlockedProfiles,
+    session: BlockedProfileSession
+  ) {
     guard stopCountdownRemaining == nil else { return }
 
     let remainingSeconds = BlockedProfiles.normalizedStopDelayInSeconds(profile.stopDelayInSeconds)
     guard remainingSeconds > 0 else {
-      stopBlocking(context: context)
+      stopBlocking(context: context, session: session)
       return
     }
 
     let deadline = Date().addingTimeInterval(Double(remainingSeconds))
 
     stopCountdownRemaining = remainingSeconds
+    stopCountdownSessionId = session.id
     stopCountdownTimer?.invalidate()
     stopCountdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
       guard let self else { return }
@@ -1005,13 +1038,15 @@ class StrategyManager: ObservableObject {
         self.stopCountdownTimer?.invalidate()
         self.stopCountdownTimer = nil
         self.stopCountdownRemaining = nil
-        self.forceStopSession(context: context)
+        let targetSession = self.stopCountdownSessionId.flatMap { try? BlockedProfileSession.findSession(byID: $0, in: context) }
+        self.stopCountdownSessionId = nil
+        self.forceStopSession(context: context, session: targetSession)
       }
     }
   }
 
-  private func forceStopSession(context: ModelContext) {
-    guard let session = activeSession else {
+  private func forceStopSession(context: ModelContext, session: BlockedProfileSession?) {
+    guard let session else {
       return
     }
 
@@ -1029,7 +1064,7 @@ class StrategyManager: ObservableObject {
     }
 
     appBlocker.deactivateRestrictions()
-    handleSessionEnded(profile: session.blockedProfile)
+    handleSessionEnded(profile: session.blockedProfile, context: context)
   }
 
   private func canStopDuringHardMode(_ session: BlockedProfileSession) -> Bool {
