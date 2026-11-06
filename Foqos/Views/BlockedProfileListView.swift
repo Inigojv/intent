@@ -220,6 +220,9 @@ struct BlockedProfileListView: View {
   }
 
   private var canCreateProfiles: Bool {
+    if listType == .usageBased {
+      return true
+    }
     return activeSessionProfileId == nil
   }
 

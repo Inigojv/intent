@@ -6,7 +6,7 @@ import WidgetKit
 struct ProfileControlProvider: AppIntentTimelineProvider {
   typealias Entry = ProfileWidgetEntry
   typealias Intent = ProfileSelectionIntent
-  private let logger = Logger(subsystem: "dev.ambitionsoftware.foqos", category: "Widget")
+  private let logger = Logger(subsystem: "com.inigojv.cntrl", category: "Widget")
 
   func placeholder(in context: Context) -> Entry {
     WidgetPreviewData.entry()

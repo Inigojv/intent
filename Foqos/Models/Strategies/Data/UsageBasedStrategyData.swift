@@ -88,7 +88,7 @@ struct UsageBasedStrategyData: Codable, Equatable {
       max(allowanceInMinutes, Self.allowanceRangeInMinutes.lowerBound),
       Self.allowanceRangeInMinutes.upperBound
     )
-    let rounded = Int((Double(clamped) / 5.0).rounded(.toNearestOrAwayFromZero) * 5.0)
+    let rounded = Int(ceil(Double(clamped) / 5.0) * 5.0)
     let normalizedValue = min(
       max(rounded, Self.allowanceRangeInMinutes.lowerBound),
       Self.allowanceRangeInMinutes.upperBound

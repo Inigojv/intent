@@ -29,7 +29,7 @@ final class FoqosFilterManager: NSObject, ObservableObject {
     }
   }
 
-  static let extensionIdentifier = "dev.ambitionsoftware.foqos.mac.filter"
+  static let extensionIdentifier = "com.inigojv.cntrl.mac.filter"
 
   @Published private(set) var status: Status = .unknown {
     didSet {

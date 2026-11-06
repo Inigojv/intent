@@ -244,22 +244,11 @@ class ShieldConfigurationExtension: ShieldConfigurationDataSource {
         "Keep going"
       ),
       ("🛡️", "Shield up", "Focus is protected. You’ve got this.", "Onward"),
-      ("🔒", "Locked in", "This block is temporary. Your momentum isn’t.", "Stay here"),
       ("🧱", "Boundary set", "You made a plan. This is you sticking to it.", "Back"),
-      ("✨", "Glow mode", "You’re building attention — that’s the real flex.", "Nice"),
-      ("🫶", "Be kind to you", "No shame. Just a gentle nudge back to what matters.", "Got it"),
-      (
-        "🌐", "Not this detour", "\(title) isn’t part of the mission right now.", "Return"
-      ),
       (
         "🕸️", "Avoid the trap", "One click turns into twenty. Let’s not.", "Back"
       ),
       ("🛡️", "Protected zone", "We’re keeping your attention where you wanted it.", "Got it"),
-      ("🔒", "Locked in", "This is a temporary block for a long-term win.", "Return"),
-      (
-        "🎯", "Back to the task", "Close the detour. Finish the task. Then come back on purpose.",
-        "Back to work"
-      ),
       (
         "⏳", "Protect the time", "A few minutes can become an hour. Keep your momentum.",
         "Stay focused"

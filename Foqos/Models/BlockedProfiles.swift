@@ -4,6 +4,11 @@ import SwiftData
 
 @Model
 class BlockedProfiles {
+  static func normalizedStopDelayInSeconds(_ stopDelayInSeconds: Int) -> Int {
+    guard stopDelayInSeconds > 0 else { return 0 }
+    return max(5, min(60, stopDelayInSeconds))
+  }
+
   @Attribute(.unique) var id: UUID
   var name: String
   var selectedActivity: FamilyActivitySelection
@@ -118,6 +123,6 @@ class BlockedProfiles {
     self.enableEmergencyUnblock = enableEmergencyUnblock
     self.enableHardMode = enableHardMode
     self.hardModeDurationInMinutes = hardModeDurationInMinutes
-    self.stopDelayInSeconds = max(0, min(60, stopDelayInSeconds))
+    self.stopDelayInSeconds = Self.normalizedStopDelayInSeconds(stopDelayInSeconds)
   }
 }

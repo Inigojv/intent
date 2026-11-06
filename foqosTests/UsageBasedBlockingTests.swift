@@ -1,4 +1,5 @@
 import DeviceActivity
+import ManagedSettings
 import XCTest
 
 @testable import foqos
@@ -183,6 +184,14 @@ final class UsageBasedBlockingTests: XCTestCase {
     XCTAssertNil(UsageBasedActivityScheduler.warningEvent(for: state))
   }
 
+  func testStopDelaySecondsAreCappedAtFiveSecondsMinimumWhenEnabled() {
+    XCTAssertEqual(BlockedProfiles.normalizedStopDelayInSeconds(0), 0)
+    XCTAssertEqual(BlockedProfiles.normalizedStopDelayInSeconds(1), 5)
+    XCTAssertEqual(BlockedProfiles.normalizedStopDelayInSeconds(4), 5)
+    XCTAssertEqual(BlockedProfiles.normalizedStopDelayInSeconds(5), 5)
+    XCTAssertEqual(BlockedProfiles.normalizedStopDelayInSeconds(60), 60)
+  }
+
   func testMonitoringStatePersistsItsPeriodAndAllowance() throws {
     var state = makeState(
       profileId: UUID(),
@@ -198,19 +207,97 @@ final class UsageBasedBlockingTests: XCTestCase {
     XCTAssertEqual(restoredState, state)
   }
 
+  func testCombinedReachedRestrictionsUnionsAllActiveProfiles() {
+    let socialToken = ManagedSettings.Application(bundleIdentifier: "com.example.social").token!
+    let newsToken = ManagedSettings.Application(bundleIdentifier: "com.example.news").token!
+
+    let firstState = makeState(
+      profileId: UUID(),
+      sessionId: UUID().uuidString,
+      windowStart: Date(timeIntervalSince1970: 1_000_000),
+      applicationTokens: [socialToken],
+      categoryTokens: [],
+      webDomainTokens: []
+    )
+    let secondState = makeState(
+      profileId: UUID(),
+      sessionId: UUID().uuidString,
+      windowStart: Date(timeIntervalSince1970: 1_000_100),
+      applicationTokens: [newsToken],
+      categoryTokens: [],
+      webDomainTokens: []
+    )
+
+    var firstReached = firstState
+    var secondReached = secondState
+    firstReached.allowanceReached = true
+    secondReached.allowanceReached = true
+
+    let combined = UsageBasedActivityScheduler.combinedReachedRestrictions(
+      for: [firstReached, secondReached]
+    )
+    let expected = Set([socialToken, newsToken])
+
+    XCTAssertEqual(combined.applicationTokens, expected)
+    XCTAssertEqual(combined.applicationTokens.count, 2)
+  }
+
+  func testUsageProgressStartsAtZeroUntilAProfileIsActive() {
+    let activeState = makeState(
+      profileId: UUID(),
+      sessionId: UUID().uuidString,
+      windowStart: Date(timeIntervalSince1970: 1_000_000),
+      allowanceInMinutes: 20,
+      applicationTokens: []
+    )
+    var inFlightState = activeState
+    inFlightState.usedMinutes = 8
+
+    XCTAssertEqual(
+      UsageBasedActivityScheduler.usageProgress(
+        for: inFlightState,
+        isActive: true,
+        fallbackAllowanceInMinutes: 20
+      ),
+      0.4,
+      accuracy: 0.0001
+    )
+    XCTAssertEqual(
+      UsageBasedActivityScheduler.usageProgress(
+        for: inFlightState,
+        isActive: false,
+        fallbackAllowanceInMinutes: 20
+      ),
+      0,
+      accuracy: 0.0001
+    )
+    XCTAssertEqual(
+      UsageBasedActivityScheduler.usageProgress(
+        for: nil,
+        isActive: true,
+        fallbackAllowanceInMinutes: 20
+      ),
+      0,
+      accuracy: 0.0001
+    )
+  }
+
   private func makeState(
     profileId: UUID,
     sessionId: String,
     windowStart: Date,
     allowanceInMinutes: Int = 20,
-    enableFiveMinuteWarning: Bool = true
+    enableFiveMinuteWarning: Bool = true,
+    applicationTokens: Set<ApplicationToken> = [],
+    categoryTokens: Set<ActivityCategoryToken> = [],
+    webDomainTokens: Set<WebDomainToken> = []
   ) -> UsageBasedMonitoringState {
     UsageBasedMonitoringState(
       profileId: profileId,
       sessionId: sessionId,
-      applicationTokens: [],
-      categoryTokens: [],
-      webDomainTokens: [],
+      applicationTokens: applicationTokens,
+      categoryTokens: categoryTokens,
+      webDomainTokens: webDomainTokens,
       allowanceInMinutes: allowanceInMinutes,
       enableFiveMinuteWarning: enableFiveMinuteWarning,
       windowStart: windowStart

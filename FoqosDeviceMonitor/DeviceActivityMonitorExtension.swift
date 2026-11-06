@@ -27,6 +27,15 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
     super.intervalDidStart(for: activity)
 
     log.info("intervalDidStart for activity: \(activity.rawValue)")
+
+    guard !activity.rawValue.hasPrefix("\(UsageBasedActivityScheduler.activityPrefix):") else {
+      return
+    }
+
+    if UsageBasedActivityScheduler.currentState(for: activity) != nil {
+      return
+    }
+
     TimerActivityUtil.startTimerActivity(for: activity)
   }
 
@@ -34,7 +43,12 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
     super.intervalDidEnd(for: activity)
 
     log.info("intervalDidEnd for activity: \(activity.rawValue)")
-    if UsageBasedActivityScheduler.currentState(for: activity) != nil {
+
+    guard !activity.rawValue.hasPrefix("\(UsageBasedActivityScheduler.activityPrefix):") else {
+      guard UsageBasedActivityScheduler.currentState(for: activity) != nil else {
+        return
+      }
+
       do {
         try UsageBasedActivityScheduler.advance(after: activity)
       } catch {
@@ -53,6 +67,11 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
   ) {
     super.eventDidReachThreshold(event, activity: activity)
 
+    if let minute = UsageBasedActivityScheduler.minuteTickMinute(from: event) {
+      UsageBasedActivityScheduler.recordUsageTick(minute: minute, for: activity)
+      return
+    }
+
     if event == UsageBasedActivityScheduler.warningEventName {
       guard let state = UsageBasedActivityScheduler.markWarningSent(for: activity) else {
         return
@@ -62,13 +81,9 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
     }
 
     guard event == UsageBasedActivityScheduler.thresholdEvent,
-      let state = UsageBasedActivityScheduler.markAllowanceReached(for: activity)
+      let _ = UsageBasedActivityScheduler.markAllowanceReached(for: activity)
     else { return }
 
-    appBlocker.activateUsageBasedRestrictions(
-      applicationTokens: state.applicationTokens,
-      categoryTokens: state.categoryTokens,
-      webDomainTokens: state.webDomainTokens
-    )
+    UsageBasedActivityScheduler.rebuildRestrictions()
   }
 }

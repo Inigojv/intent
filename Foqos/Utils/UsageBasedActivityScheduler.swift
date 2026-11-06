@@ -14,6 +14,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
   var enableExtraTimeReduction: Bool
   var extraTimeCooldownInSeconds: Int
   var windowStart: Date
+  var usedMinutes: Int
   var warningSent = false
   var allowanceReached = false
   var extraTimeUsedCount = 0
@@ -31,6 +32,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     enableExtraTimeReduction: Bool = UsageBasedStrategyData.defaultExtraTimeReductionEnabled,
     extraTimeCooldownInSeconds: Int = UsageBasedStrategyData.defaultExtraTimeCooldownInSeconds,
     windowStart: Date,
+    usedMinutes: Int = 0,
     warningSent: Bool = false,
     allowanceReached: Bool = false,
     extraTimeUsedCount: Int = 0,
@@ -47,6 +49,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     self.enableExtraTimeReduction = enableExtraTimeReduction
     self.extraTimeCooldownInSeconds = extraTimeCooldownInSeconds
     self.windowStart = windowStart
+    self.usedMinutes = usedMinutes
     self.warningSent = warningSent
     self.allowanceReached = allowanceReached
     self.extraTimeUsedCount = extraTimeUsedCount
@@ -65,6 +68,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     case enableExtraTimeReduction
     case extraTimeCooldownInSeconds
     case windowStart
+    case usedMinutes
     case warningSent
     case allowanceReached
     case extraTimeUsedCount
@@ -96,6 +100,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
       forKey: .extraTimeCooldownInSeconds
     ) ?? UsageBasedStrategyData.defaultExtraTimeCooldownInSeconds
     windowStart = try container.decode(Date.self, forKey: .windowStart)
+    usedMinutes = try container.decodeIfPresent(Int.self, forKey: .usedMinutes) ?? 0
     warningSent = try container.decodeIfPresent(Bool.self, forKey: .warningSent) ?? false
     allowanceReached = try container.decodeIfPresent(Bool.self, forKey: .allowanceReached) ?? false
     extraTimeUsedCount = try container.decodeIfPresent(Int.self, forKey: .extraTimeUsedCount) ?? 0
@@ -145,19 +150,25 @@ struct UsageBasedMonitoringState: Codable, Equatable {
 
   mutating func beginWindow(at date: Date) {
     windowStart = date
+    usedMinutes = 0
     warningSent = false
     allowanceReached = false
+  }
+
+  mutating func recordUsageTick(minute: Int) {
+    usedMinutes = max(usedMinutes, minute)
   }
 }
 
 enum UsageBasedActivityScheduler {
   static let activityPrefix = "UsageBasedBlockingActivity"
+  static let activityMinuteTickPrefix = "usageMinuteTick"
   static let thresholdEvent = DeviceActivityEvent.Name("usageAllowanceReached")
   static let warningEventName = DeviceActivityEvent.Name("usageFiveMinutesRemaining")
 
   private static let stateKey = "usageBasedBlocking.monitoringState"
   private static let statesKey = "usageBasedBlocking.monitoringStates"
-  private static let suite = UserDefaults(suiteName: "group.dev.ambitionsoftware.foqos")!
+  private static let suite = UserDefaults(suiteName: "group.com.inigojv.cntrl")!
 
   static var allStates: [UsageBasedMonitoringState] {
     if let data = suite.data(forKey: statesKey),
@@ -180,29 +191,65 @@ enum UsageBasedActivityScheduler {
   }
 
   static func currentState(for activity: DeviceActivityName) -> UsageBasedMonitoringState? {
-    allStates.first { $0.activityName == activity }
+    allStates.filter { $0.activityName == activity }.last
   }
 
   static func state(for sessionId: String) -> UsageBasedMonitoringState? {
-    allStates.first { $0.sessionId == sessionId }
+    allStates.filter { $0.sessionId == sessionId }.last
+  }
+
+  static func state(for profileId: UUID) -> UsageBasedMonitoringState? {
+    allStates.filter { $0.profileId == profileId }.last
+  }
+
+  static func combinedReachedRestrictions(
+    for states: [UsageBasedMonitoringState]
+  ) -> (
+    applicationTokens: Set<ApplicationToken>,
+    categoryTokens: Set<ActivityCategoryToken>,
+    webDomainTokens: Set<WebDomainToken>
+  ) {
+    let applicationTokens = Set(states.flatMap { $0.applicationTokens })
+    let categoryTokens = Set(states.flatMap { $0.categoryTokens })
+    let webDomainTokens = Set(states.flatMap { $0.webDomainTokens })
+    return (applicationTokens, categoryTokens, webDomainTokens)
+  }
+
+  static func usageProgress(
+    for state: UsageBasedMonitoringState?,
+    isActive: Bool,
+    fallbackAllowanceInMinutes: Int = UsageBasedStrategyData.defaultAllowanceInMinutes
+  ) -> Double {
+    guard isActive, let state else { return 0 }
+    let total = max(1, state.allowanceInMinutes)
+    let used = max(0, min(state.usedMinutes, total))
+    return max(0, min(1, Double(used) / Double(total)))
   }
 
   static func rebuildRestrictions() {
-    let states = allStates
-    guard !states.isEmpty else {
+    let reachedStates = allStates.filter { $0.allowanceReached }
+
+    guard !reachedStates.isEmpty else {
       AppBlockerUtil().deactivateUsageBasedRestrictions()
       return
     }
 
-    let applicationTokens = Set(states.flatMap { $0.applicationTokens })
-    let categoryTokens = Set(states.flatMap { $0.categoryTokens })
-    let webDomainTokens = Set(states.flatMap { $0.webDomainTokens })
-
+    let combined = combinedReachedRestrictions(for: reachedStates)
     AppBlockerUtil().activateUsageBasedRestrictions(
-      applicationTokens: applicationTokens,
-      categoryTokens: categoryTokens,
-      webDomainTokens: webDomainTokens
+      applicationTokens: combined.applicationTokens,
+      categoryTokens: combined.categoryTokens,
+      webDomainTokens: combined.webDomainTokens
     )
+  }
+
+  static func profileId(from activity: DeviceActivityName) -> UUID? {
+    let components = activity.rawValue.split(separator: ":")
+    guard components.count == 4,
+      components[0] == Substring(activityPrefix)
+    else {
+      return nil
+    }
+    return UUID(uuidString: String(components[1]))
   }
 
   static func sessionId(from activity: DeviceActivityName) -> String? {
@@ -337,13 +384,16 @@ enum UsageBasedActivityScheduler {
 
     let center = DeviceActivityCenter()
     if state.windowStart != window.start {
-      AppBlockerUtil().deactivateUsageBasedRestrictions()
-      center.stopMonitoring([state.activityName])
-      state.beginWindow(at: window.start)
-      save(state)
-      try schedule(state, window: window, calendar: calendar)
-      return
-    }
+    center.stopMonitoring([state.activityName])
+
+    state.beginWindow(at: window.start)
+    save(state)
+
+    rebuildRestrictions()
+
+    try schedule(state, window: window, calendar: calendar)
+    return
+}
 
     if !center.activities.contains(state.activityName) {
       try schedule(state, window: window, calendar: calendar)
@@ -368,14 +418,12 @@ enum UsageBasedActivityScheduler {
     }
 
     save(state)
-    AppBlockerUtil().deactivateUsageBasedRestrictions()
+    rebuildRestrictions()
 
-    let center = DeviceActivityCenter()
-    center.stopMonitoring([activity])
     do {
-      try schedule(state, window: window, calendar: calendar)
+    try schedule(state, window: window, calendar: calendar)
     } catch {
-      return nil
+    return nil
     }
 
     return state
@@ -383,11 +431,37 @@ enum UsageBasedActivityScheduler {
 
   static func stop(sessionId: String) {
     let center = DeviceActivityCenter()
-    let activities = center.activities.filter { Self.sessionId(from: $0) == sessionId }
+
+    let activities = center.activities.filter {
+      Self.sessionId(from: $0) == sessionId
+    }
+
+    clear(sessionId: sessionId)
+
     if !activities.isEmpty {
       center.stopMonitoring(activities)
     }
-    clear(sessionId: sessionId)
+
+    rebuildRestrictions()
+  }
+
+  static func stopDuplicateUsageMonitors(for profileId: UUID, except sessionId: String? = nil) {
+    let center = DeviceActivityCenter()
+    let usageActivities = center.activities.filter { $0.rawValue.hasPrefix("\(activityPrefix):") }
+    let activeSessionIds = Set(allStates.map(\.sessionId))
+
+    for activity in usageActivities {
+      guard let activityProfileId = Self.profileId(from: activity) else { continue }
+      guard let activitySessionId = Self.sessionId(from: activity) else { continue }
+
+      let isSameProfile = activityProfileId == profileId
+      let isSameSession = sessionId == activitySessionId
+      let isStale = !activeSessionIds.contains(activitySessionId)
+
+      if (isSameProfile && !isSameSession) || isStale {
+        center.stopMonitoring([activity])
+      }
+    }
   }
 
   static func hourlyWindow(containing date: Date, calendar: Calendar = .current) -> DateInterval? {
@@ -399,8 +473,36 @@ enum UsageBasedActivityScheduler {
   }
 
   static func warningEvent(for state: UsageBasedMonitoringState) -> DeviceActivityEvent? {
-    guard state.enableFiveMinuteWarning, state.allowanceInMinutes > 1 else { return nil }
-    return event(for: state, thresholdInMinutes: state.allowanceInMinutes - 1)
+    guard state.enableFiveMinuteWarning, state.allowanceInMinutes > 5 else { return nil }
+    return event(for: state, thresholdInMinutes: state.allowanceInMinutes - 5)
+  }
+
+  static func minuteTickEventName(for minute: Int) -> DeviceActivityEvent.Name {
+    DeviceActivityEvent.Name("\(activityMinuteTickPrefix):\(minute)")
+  }
+
+  static func minuteTickMinute(from event: DeviceActivityEvent.Name) -> Int? {
+    let raw = event.rawValue
+    guard raw.hasPrefix("\(activityMinuteTickPrefix):") else { return nil }
+    let suffix = raw.replacingOccurrences(of: "\(activityMinuteTickPrefix):", with: "")
+    return Int(suffix)
+  }
+
+  static func recordUsageTick(
+    minute: Int,
+    for activity: DeviceActivityName,
+    at date: Date = Date(),
+    calendar: Calendar = .current
+  ) {
+    guard var state = currentState(for: activity),
+      let window = hourlyWindow(containing: date, calendar: calendar),
+      state.windowStart == window.start
+    else {
+      return
+    }
+
+    state.recordUsageTick(minute: minute)
+    save(state)
   }
 
   static func markWarningSent(
@@ -455,6 +557,19 @@ enum UsageBasedActivityScheduler {
     window: DateInterval,
     calendar: Calendar
   ) throws {
+    let center = DeviceActivityCenter()
+    let activeUsageActivities = center.activities.filter { $0.rawValue.hasPrefix("\(activityPrefix):") }
+
+    stopDuplicateUsageMonitors(for: state.profileId, except: state.sessionId)
+
+    if !activeUsageActivities.contains(state.activityName) {
+      let activityLimit = 5
+      let remainingUsageActivities = center.activities.filter { $0.rawValue.hasPrefix("\(activityPrefix):") }
+      if remainingUsageActivities.count >= activityLimit {
+        throw UsageBasedActivityError.tooManyActivities
+      }
+    }
+
     let components: Set<Calendar.Component> = [
       .era, .year, .month, .day, .hour, .minute, .second,
     ]
@@ -470,7 +585,18 @@ enum UsageBasedActivityScheduler {
       events[Self.warningEventName] = warningEvent
     }
 
-    try DeviceActivityCenter().startMonitoring(
+    let tickMinutes = Set(1...state.allowanceInMinutes)
+    for minute in tickMinutes {
+      if minute == state.allowanceInMinutes || (warningEvent(for: state) != nil && minute == state.allowanceInMinutes - 5) {
+        continue
+      }
+      events[Self.minuteTickEventName(for: minute)] = Self.event(
+        for: state,
+        thresholdInMinutes: minute
+      )
+    }
+
+    try center.startMonitoring(
       state.activityName,
       during: schedule,
       events: events
@@ -503,4 +629,18 @@ enum UsageBasedActivityScheduler {
 enum UsageBasedActivityError: Error {
   case invalidHourlyWindow
   case noSelectedActivities
+  case tooManyActivities
+}
+
+extension UsageBasedActivityError: LocalizedError {
+  var errorDescription: String? {
+    switch self {
+    case .invalidHourlyWindow:
+      return "The usage window could not be scheduled."
+    case .noSelectedActivities:
+      return "Select at least one app, category, or website to protect."
+    case .tooManyActivities:
+      return "This app is already monitoring the maximum number of usage-based activities. Stop one and try again."
+    }
+  }
 }

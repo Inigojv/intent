@@ -162,7 +162,10 @@ struct HomeView: View {
   }
 
   private func startProfile(_ profile: BlockedProfiles) {
-    guard !isBlocking else {
+    let isUsageBasedProfile = profile.blockingStrategyId == UsageBasedBlockingStrategy.id
+    let isBlockedByOnDemandSession = isBlocking && !isUsageBasedProfile
+
+    guard !isBlockedByOnDemandSession else {
       showErrorAlert(message: "Stop the active profile before starting another one.")
       return
     }

@@ -197,6 +197,8 @@ private struct HomeProfilesStrategySection: View {
 
 private struct HomeProfileRow: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.modelContext) private var context
+  @EnvironmentObject private var strategyManager: StrategyManager
   @EnvironmentObject private var themeManager: ThemeManager
   @State private var hasRoomForMiniChart = false
 
@@ -240,7 +242,7 @@ private struct HomeProfileRow: View {
   }
 
   private var strategyState: UsageBasedMonitoringState? {
-    UsageBasedActivityScheduler.allStates.first { $0.profileId == profile.id }
+    UsageBasedActivityScheduler.state(for: profile.id)
   }
 
   private var usageConfiguration: UsageBasedStrategyData {
@@ -248,14 +250,15 @@ private struct HomeProfileRow: View {
   }
 
   private var usageTotalMinutes: Int {
-    max(1, strategyState?.allowanceInMinutes ?? usageConfiguration.allowanceInMinutes)
+    if !isActive {
+      return max(1, usageConfiguration.allowanceInMinutes)
+    }
+    return max(1, strategyState?.allowanceInMinutes ?? usageConfiguration.allowanceInMinutes)
   }
 
   private var usageUsedMinutes: Int {
-    guard let state = strategyState else { return 0 }
-    let elapsedSeconds = max(0, Date().timeIntervalSince(state.windowStart))
-    let elapsedMinutes = min(Double(usageTotalMinutes), elapsedSeconds / 60.0)
-    return Int(max(0, min(Double(usageTotalMinutes), elapsedMinutes)))
+    guard isActive else { return 0 }
+    return strategyState?.usedMinutes ?? 0
   }
 
   private var usageRemainingMinutes: Int {
@@ -295,6 +298,7 @@ private struct HomeProfileRow: View {
   }
 
   private var usageBarColor: Color {
+    guard isActive else { return .gray }
     if strategyState?.allowanceReached == true {
       return .red
     }
@@ -308,9 +312,13 @@ private struct HomeProfileRow: View {
   }
 
   private var usageBarProgress: CGFloat {
-    guard strategyState != nil else { return 0 }
-    let ratio = max(0, min(1, Double(usageUsedMinutes) / Double(usageTotalMinutes)))
-    return CGFloat(ratio)
+    CGFloat(
+      UsageBasedActivityScheduler.usageProgress(
+        for: strategyState,
+        isActive: isActive,
+        fallbackAllowanceInMinutes: usageConfiguration.allowanceInMinutes
+      )
+    )
   }
 
   private var scheduleInfoText: String {
@@ -494,35 +502,86 @@ private struct HomeProfileRow: View {
     }
   }
 
-  private var actionMenu: some View {
-    Menu {
-
-      Button(action: onStatsTapped) {
-        Label("Insights", systemImage: "chart.line.uptrend.xyaxis")
-      }
-
-      Button(action: onEditTapped) {
-        Label("Edit", systemImage: "pencil")
-      }
-
-      if isActive {
-        Button(action: onStopTapped) {
-          Label(activeAction.title, systemImage: activeAction.systemImageName)
-        }
-        .disabled(!canStop)
-      } else {
-        Button(action: onStartTapped) {
-          Label("Start", systemImage: "play.fill")
-        }
-        .disabled(!canStart)
-      }
-    } label: {
-      Image(systemName: "ellipsis")
-        .font(.system(size: 16, weight: .semibold))
-        .foregroundStyle(.gray)
-        .frame(width: 32, height: 44)
-        .contentShape(Rectangle())
+  private var actionButtonTitle: String {
+    if !isActive {
+      return "Start"
     }
-    .accessibilityLabel("More actions for \(profile.name)")
+
+    if isStopCountdownActive, let remaining = stopCountdownRemaining {
+      return "Stop (\(remaining)s)"
+    }
+
+    return activeAction.title
+  }
+
+  private func handleActionTap() {
+    if !isActive {
+      onStartTapped()
+      return
+    }
+
+    if isStopCountdownActive {
+      strategyManager.confirmStopCountdown(context: context)
+      return
+    }
+
+    onStopTapped()
+  }
+
+  private var actionButton: some View {
+    Button(action: handleActionTap) {
+      HStack(spacing: 6) {
+        Image(systemName: isActive ? (isStopCountdownActive ? "stop.fill" : activeAction.systemImageName) : "play.fill")
+          .font(.system(size: 12, weight: .semibold))
+
+        Text(actionButtonTitle)
+          .font(.subheadline)
+          .fontWeight(.semibold)
+      }
+      .frame(minWidth: 72)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+    }
+    .buttonStyle(.borderedProminent)
+    .tint(isStopCountdownActive ? .orange : themeManager.themeColor)
+    .disabled(isActive ? !canStop : !canStart)
+    .accessibilityLabel(isActive ? "Stop or confirm stop for \(profile.name)" : "Start \(profile.name)")
+  }
+
+  private var actionMenu: some View {
+    Group {
+      if profile.blockingStrategyId == UsageBasedBlockingStrategy.id {
+        actionButton
+      } else {
+        Menu {
+          Button(action: onStatsTapped) {
+            Label("Insights", systemImage: "chart.line.uptrend.xyaxis")
+          }
+
+          Button(action: onEditTapped) {
+            Label("Edit", systemImage: "pencil")
+          }
+
+          if isActive {
+            Button(action: onStopTapped) {
+              Label(activeAction.title, systemImage: activeAction.systemImageName)
+            }
+            .disabled(!canStop)
+          } else {
+            Button(action: onStartTapped) {
+              Label("Start", systemImage: "play.fill")
+            }
+            .disabled(!canStart)
+          }
+        } label: {
+          Image(systemName: "ellipsis")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(.gray)
+            .frame(width: 32, height: 44)
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("More actions for \(profile.name)")
+      }
+    }
   }
 }

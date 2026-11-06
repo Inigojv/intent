@@ -55,6 +55,35 @@ final class BlockedProfileSessionRegressionTests: ModelRegressionTestCase {
       try BlockedProfileSession.findSession(byID: session.id, in: freshContext())?.endTime)
   }
 
+  func testUsageBasedSessionsDoNotWriteToSharedSingleSlotSession() throws {
+    let profileA = BlockedProfiles(name: "Social", blockingStrategyId: UsageBasedBlockingStrategy.id)
+    let profileB = BlockedProfiles(name: "Games", blockingStrategyId: UsageBasedBlockingStrategy.id)
+    context.insert(profileA)
+    context.insert(profileB)
+
+    let sessionA = BlockedProfileSession.createSession(
+      in: context,
+      withTag: UsageBasedBlockingStrategy.id,
+      withProfile: profileA,
+      forceStart: true
+    )
+    let sessionB = BlockedProfileSession.createSession(
+      in: context,
+      withTag: UsageBasedBlockingStrategy.id,
+      withProfile: profileB,
+      forceStart: true
+    )
+
+    XCTAssertTrue(sessionA.isActive)
+    XCTAssertTrue(sessionB.isActive)
+    XCTAssertNil(SharedData.activeSharedSession)
+
+    sessionA.endSession(); sessionB.endSession()
+    try context.save()
+    XCTAssertFalse(sessionA.isActive)
+    XCTAssertFalse(sessionB.isActive)
+  }
+
   func testSingleBreakTransitionsAndSharedState() {
     let session = makeSession(multiple: false)
     XCTAssertTrue(session.isBreakAvailable)

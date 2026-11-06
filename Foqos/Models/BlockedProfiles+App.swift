@@ -229,7 +229,7 @@ extension BlockedProfiles {
     }
 
     if let stopDelayInSeconds {
-      profile.stopDelayInSeconds = max(0, min(60, stopDelayInSeconds))
+      profile.stopDelayInSeconds = BlockedProfiles.normalizedStopDelayInSeconds(stopDelayInSeconds)
     }
 
     if let physicalUnblockItems {

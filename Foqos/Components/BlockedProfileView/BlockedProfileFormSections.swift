@@ -481,9 +481,9 @@ struct BlockedProfileSessionSafeguardsFields: View {
           get: { draft.stopDelayInSeconds > 0 },
           set: { isEnabled in
             if isEnabled {
-              draft.stopDelayInSeconds = draft.stopDelayInSeconds > 0
-                ? draft.stopDelayInSeconds
-                : 5
+              draft.stopDelayInSeconds = BlockedProfiles.normalizedStopDelayInSeconds(
+                draft.stopDelayInSeconds > 0 ? draft.stopDelayInSeconds : 5
+              )
             } else {
               draft.stopDelayInSeconds = 0
             }
@@ -505,9 +505,11 @@ struct BlockedProfileSessionSafeguardsFields: View {
           Slider(
             value: Binding(
               get: { Double(draft.stopDelayInSeconds) },
-              set: { draft.stopDelayInSeconds = Int($0.rounded()) }
+              set: { draft.stopDelayInSeconds = BlockedProfiles.normalizedStopDelayInSeconds(
+                Int($0.rounded())
+              ) }
             ),
-            in: 0...60,
+            in: 5...60,
             step: 1
           )
           .tint(themeManager.themeColor)

@@ -240,7 +240,11 @@ extension BlockedProfileSession {
     let sessionSnapshot = newSession.toSnapshot()
     let profileSnapshot = BlockedProfiles.getSnapshot(for: profile)
 
-    SharedData.createActiveSharedSession(for: sessionSnapshot)
+    let isUsageBasedSession = tag == UsageBasedBlockingStrategy.id
+    if !isUsageBasedSession {
+      SharedData.createActiveSharedSession(for: sessionSnapshot)
+    }
+
     BlockingSessionLifecycleRegistry.sessionDidStart(
       BlockingSessionLifecycleContext(
         profile: profileSnapshot,

@@ -76,12 +76,15 @@ final class UsageBasedBlockingStrategy: BlockingStrategy {
   func stopBlocking(
     context: ModelContext,
     session: BlockedProfileSession
-  ) -> (any View)? {
+) -> (any View)? {
+    UsageBasedActivityScheduler.stop(sessionId: session.id)
+
     session.endSession()
     try? context.save()
+
     onSessionCreation?(.ended(session.blockedProfile))
     return nil
-  }
+}
 
   private func startSession(
     context: ModelContext,
@@ -89,7 +92,6 @@ final class UsageBasedBlockingStrategy: BlockingStrategy {
     configuration: UsageBasedStrategyData,
     forceStart: Bool
   ) {
-    appBlocker.deactivateUsageBasedRestrictions()
     if configuration.enableFiveMinuteWarning && configuration.allowanceInMinutes > 1 {
       UsageBasedNotificationScheduler.requestAuthorization()
     }
@@ -115,6 +117,10 @@ final class UsageBasedBlockingStrategy: BlockingStrategy {
         extraTimeCooldownInSeconds: configuration.extraTimeCooldownInSeconds
       )
       onSessionCreation?(.started(session))
+    } catch let error as UsageBasedActivityError {
+      session.endSession()
+      try? context.save()
+      onErrorMessage?(error.localizedDescription)
     } catch {
       session.endSession()
       try? context.save()

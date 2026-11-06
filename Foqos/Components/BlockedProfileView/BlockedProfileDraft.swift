@@ -63,7 +63,9 @@ final class BlockedProfileDraft: ObservableObject {
     enableEmergencyUnblock = profile?.enableEmergencyUnblock ?? true
     enableHardMode = profile?.enableHardMode ?? false
     hardModeDurationInMinutes = profile?.hardModeDurationInMinutes ?? 30
-    stopDelayInSeconds = max(0, min(60, profile?.stopDelayInSeconds ?? 0))
+    stopDelayInSeconds = BlockedProfiles.normalizedStopDelayInSeconds(
+      profile?.stopDelayInSeconds ?? 0
+    )
     reminderTimeInMinutes = Int(profile?.reminderTimeInSeconds ?? 900) / 60
     customReminderMessage = profile?.customReminderMessage ?? ""
     domains = profile?.domains ?? []

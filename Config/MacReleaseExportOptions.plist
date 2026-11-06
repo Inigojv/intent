@@ -5,14 +5,14 @@
 	<key>destination</key>
 	<string>export</string>
 	<key>distributionBundleIdentifier</key>
-	<string>dev.ambitionsoftware.foqos.mac</string>
+	<string>com.inigojv.cntrl.mac</string>
 	<key>method</key>
 	<string>developer-id</string>
 	<key>provisioningProfiles</key>
 	<dict>
-		<key>dev.ambitionsoftware.foqos.mac</key>
+		<key>com.inigojv.cntrl.mac</key>
 		<string>Foqos Mac Developer ID</string>
-		<key>dev.ambitionsoftware.foqos.mac.filter</key>
+		<key>com.inigojv.cntrl.mac.filter</key>
 		<string>Foqos Filter Developer ID</string>
 	</dict>
 	<key>signingCertificate</key>
