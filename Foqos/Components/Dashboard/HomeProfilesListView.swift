@@ -7,14 +7,14 @@ struct HomeProfilesListView: View {
   let activeProfileIds: Set<UUID>
   let elapsedTime: TimeInterval
   let pausedProfileIds: Set<UUID>
-  let stopCountdownProfileId: UUID?
-  let stopCountdownRemaining: Int?
+  let stopCountdownRemainingByProfileId: [UUID: Int]
   var isHardModeActionLocked: Bool = false
   let onManageTapped: () -> Void
   let onStartTapped: (BlockedProfiles) -> Void
   let onStopTapped: (BlockedProfiles) -> Void
   let onEditTapped: (BlockedProfiles) -> Void
   let onStatsTapped: (BlockedProfiles) -> Void
+  let onGrantExtraTimeTapped: (BlockedProfiles) -> Void
   var selectedProfileId: UUID? = nil
   var onSelectProfile: ((BlockedProfiles) -> Void)? = nil
 
@@ -36,8 +36,7 @@ struct HomeProfilesListView: View {
             isActive: activeProfileIds.contains(profile.id),
             elapsedTime: elapsedTime,
             isPauseActive: pausedProfileIds.contains(profile.id),
-            isStopCountdownActive: stopCountdownProfileId == profile.id,
-            stopCountdownRemaining: stopCountdownRemaining,
+            stopCountdownRemaining: stopCountdownRemainingByProfileId[profile.id],
             isHardModeActionLocked: isHardModeActionLocked,
             isSelected: profile.id == selectedProfileId,
             selectsInsights: onSelectProfile != nil,
@@ -55,6 +54,9 @@ struct HomeProfilesListView: View {
             },
             onStatsTapped: {
               onStatsTapped(profile)
+            },
+            onGrantExtraTimeTapped: {
+              onGrantExtraTimeTapped(profile)
             }
           )
 
@@ -83,15 +85,16 @@ struct HomeProfilesByStrategyListView: View {
   let activeProfileIds: Set<UUID>
   let elapsedTime: TimeInterval
   let pausedProfileIds: Set<UUID>
-  let stopCountdownProfileId: UUID?
-  let stopCountdownRemaining: Int?
+  let stopCountdownRemainingByProfileId: [UUID: Int]
   let isHardModeActionLocked: Bool
   let onManageUsageBasedTapped: () -> Void
   let onManageOnDemandTapped: () -> Void
+  let onStartAllUsageTapped: () -> Void
   let onStartTapped: (BlockedProfiles) -> Void
   let onStopTapped: (BlockedProfiles) -> Void
   let onEditTapped: (BlockedProfiles) -> Void
   let onStatsTapped: (BlockedProfiles) -> Void
+  let onGrantExtraTimeTapped: (BlockedProfiles) -> Void
 
   private var usageBasedProfiles: [BlockedProfiles] {
     profiles.filter { $0.blockingStrategyId == UsageBasedBlockingStrategy.id }
@@ -111,14 +114,15 @@ struct HomeProfilesByStrategyListView: View {
         activeProfileIds: activeProfileIds,
         elapsedTime: elapsedTime,
         pausedProfileIds: pausedProfileIds,
-        stopCountdownProfileId: stopCountdownProfileId,
-        stopCountdownRemaining: stopCountdownRemaining,
+        stopCountdownRemainingByProfileId: stopCountdownRemainingByProfileId,
         isHardModeActionLocked: isHardModeActionLocked,
         onManageTapped: onManageUsageBasedTapped,
+        onStartAllUsageTapped: onStartAllUsageTapped,
         onStartTapped: onStartTapped,
         onStopTapped: onStopTapped,
         onEditTapped: onEditTapped,
-        onStatsTapped: onStatsTapped
+        onStatsTapped: onStatsTapped,
+        onGrantExtraTimeTapped: onGrantExtraTimeTapped
       )
 
       if !onDemandProfiles.isEmpty {
@@ -130,14 +134,15 @@ struct HomeProfilesByStrategyListView: View {
           activeProfileIds: activeProfileIds,
           elapsedTime: elapsedTime,
           pausedProfileIds: pausedProfileIds,
-          stopCountdownProfileId: stopCountdownProfileId,
-          stopCountdownRemaining: stopCountdownRemaining,
+          stopCountdownRemainingByProfileId: stopCountdownRemainingByProfileId,
           isHardModeActionLocked: isHardModeActionLocked,
           onManageTapped: onManageOnDemandTapped,
+          onStartAllUsageTapped: {},
           onStartTapped: onStartTapped,
           onStopTapped: onStopTapped,
           onEditTapped: onEditTapped,
-          onStatsTapped: onStatsTapped
+          onStatsTapped: onStatsTapped,
+          onGrantExtraTimeTapped: onGrantExtraTimeTapped
         )
       }
     }
@@ -152,23 +157,55 @@ private struct HomeProfilesStrategySection: View {
   let activeProfileIds: Set<UUID>
   let elapsedTime: TimeInterval
   let pausedProfileIds: Set<UUID>
-  let stopCountdownProfileId: UUID?
-  let stopCountdownRemaining: Int?
+  let stopCountdownRemainingByProfileId: [UUID: Int]
   let isHardModeActionLocked: Bool
   let onManageTapped: () -> Void
+  let onStartAllUsageTapped: () -> Void
   let onStartTapped: (BlockedProfiles) -> Void
   let onStopTapped: (BlockedProfiles) -> Void
   let onEditTapped: (BlockedProfiles) -> Void
   let onStatsTapped: (BlockedProfiles) -> Void
+  let onGrantExtraTimeTapped: (BlockedProfiles) -> Void
+
+  private var isUsageBasedSection: Bool {
+    title == "Usage based"
+  }
+
+  private var hasActiveProfilesInSection: Bool {
+    profiles.contains { activeProfileIds.contains($0.id) }
+  }
+
+  private var hasStopCountdownInSection: Bool {
+    profiles.contains { (stopCountdownRemainingByProfileId[$0.id] ?? 0) > 0 }
+  }
+
+  private var usageHeaderTitle: String {
+    if hasStopCountdownInSection {
+      return "Stopping..."
+    }
+    if hasActiveProfilesInSection {
+      return "Stop all"
+    }
+    return "Start"
+  }
+
+  private var usageHeaderIcon: String {
+    if hasStopCountdownInSection {
+      return "timer"
+    }
+    return hasActiveProfilesInSection ? "stop.fill" : "play.fill"
+  }
+
+  private var usageHeaderColor: Color {
+    if hasStopCountdownInSection {
+      return .orange
+    }
+    return hasActiveProfilesInSection ? .red : .green
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      SectionTitle(
-        title,
-        buttonText: "Manage",
-        buttonAction: onManageTapped,
-        buttonIcon: "brain.head.profile"
-      )
+      header
 
       VStack(spacing: 0) {
         ForEach(Array(profiles.enumerated()), id: \.element.id) { index, profile in
@@ -179,8 +216,7 @@ private struct HomeProfilesStrategySection: View {
             isActive: activeProfileIds.contains(profile.id),
             elapsedTime: elapsedTime,
             isPauseActive: pausedProfileIds.contains(profile.id),
-            isStopCountdownActive: stopCountdownProfileId == profile.id,
-            stopCountdownRemaining: stopCountdownRemaining,
+            stopCountdownRemaining: stopCountdownRemainingByProfileId[profile.id],
             isHardModeActionLocked: isHardModeActionLocked,
             isSelected: false,
             selectsInsights: false,
@@ -188,7 +224,8 @@ private struct HomeProfilesStrategySection: View {
             onStartTapped: { onStartTapped(profile) },
             onStopTapped: { onStopTapped(profile) },
             onEditTapped: { onEditTapped(profile) },
-            onStatsTapped: { onStatsTapped(profile) }
+            onStatsTapped: { onStatsTapped(profile) },
+            onGrantExtraTimeTapped: { onGrantExtraTimeTapped(profile) }
           )
 
           if index < profiles.count - 1 {
@@ -207,6 +244,33 @@ private struct HomeProfilesStrategySection: View {
       )
     }
   }
+
+  private var header: some View {
+    HStack {
+      Text(title)
+        .font(.headline)
+        .fontWeight(.medium)
+        .foregroundColor(.secondary)
+
+      Spacer()
+
+      if isUsageBasedSection {
+        RoundedButton(
+          usageHeaderTitle,
+          action: onStartAllUsageTapped,
+          textColor: usageHeaderColor,
+          iconName: usageHeaderIcon
+        )
+      }
+
+      RoundedButton(
+        "Manage",
+        action: onManageTapped,
+        iconName: "brain.head.profile"
+      )
+    }
+    .padding(.bottom, 10)
+  }
 }
 
 private struct HomeProfileRow: View {
@@ -222,7 +286,6 @@ private struct HomeProfileRow: View {
   let isActive: Bool
   let elapsedTime: TimeInterval
   let isPauseActive: Bool
-  let isStopCountdownActive: Bool
   let stopCountdownRemaining: Int?
   let isHardModeActionLocked: Bool
   let isSelected: Bool
@@ -232,6 +295,7 @@ private struct HomeProfileRow: View {
   let onStopTapped: () -> Void
   let onEditTapped: () -> Void
   let onStatsTapped: () -> Void
+  let onGrantExtraTimeTapped: () -> Void
 
   private var showsMiniChart: Bool {
     hasRoomForMiniChart && !dynamicTypeSize.isAccessibilitySize
@@ -304,7 +368,7 @@ private struct HomeProfileRow: View {
   }
 
   private var isStopCountdownVisible: Bool {
-    guard isActive, isStopCountdownActive else { return false }
+    guard isActive else { return false }
     guard let remaining = stopCountdownRemaining else { return false }
     return remaining > 0
   }
@@ -359,6 +423,12 @@ private struct HomeProfileRow: View {
     case .active:
       return "Active"
     }
+  }
+
+  private var shouldShowUsageExtraTimeButton: Bool {
+    profile.blockingStrategyId == UsageBasedBlockingStrategy.id
+      && isActive
+      && strategyState?.allowanceReached == true
   }
 
   private var usageBarProgress: CGFloat {
@@ -577,7 +647,7 @@ private struct HomeProfileRow: View {
     }
 
     if isStopCountdownVisible {
-      strategyManager.confirmStopCountdown(context: context)
+      strategyManager.confirmStopCountdown(context: context, profileID: profile.id)
       return
     }
 
@@ -587,7 +657,7 @@ private struct HomeProfileRow: View {
   private var actionButton: some View {
     Button(action: handleActionTap) {
       HStack(spacing: 6) {
-        Image(systemName: isActive ? (isStopCountdownActive ? "stop.fill" : activeAction.systemImageName) : "play.fill")
+        Image(systemName: isActive ? (isStopCountdownVisible ? "stop.fill" : activeAction.systemImageName) : "play.fill")
           .font(.system(size: 12, weight: .semibold))
 
         Text(actionButtonTitle)
@@ -607,7 +677,17 @@ private struct HomeProfileRow: View {
   private var actionMenu: some View {
     Group {
       if profile.blockingStrategyId == UsageBasedBlockingStrategy.id {
-        actionButton
+        if shouldShowUsageExtraTimeButton {
+          Button(action: onGrantExtraTimeTapped) {
+            Image(systemName: "plus")
+              .font(.system(size: 16, weight: .bold))
+              .foregroundStyle(.yellow)
+              .frame(width: 32, height: 44)
+              .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Grant extra time for \(profile.name)")
+        }
       } else {
         Menu {
           Button(action: onStatsTapped) {

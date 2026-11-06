@@ -2,6 +2,7 @@ import SwiftData
 import SwiftUI
 
 struct HomeDashboardView: View {
+  @Environment(\.modelContext) private var modelContext
   @EnvironmentObject private var strategyManager: StrategyManager
 
   @Query(
@@ -59,12 +60,20 @@ struct HomeDashboardView: View {
     Set(activeSessions.filter { $0.isPauseActive }.map { $0.blockedProfile.id })
   }
 
-  private var stopCountdownProfileId: UUID? {
-    guard let countdownSessionId = strategyManager.stopCountdownSessionId else {
-      return nil
+  private var stopCountdownRemainingByProfileId: [UUID: Int] {
+    var countdowns: [UUID: Int] = [:]
+
+    for session in activeSessions {
+      if let remaining = strategyManager.stopCountdownRemaining(for: session.id), remaining > 0 {
+        countdowns[session.blockedProfile.id] = remaining
+      }
     }
 
-    return activeSessions.first(where: { $0.id == countdownSessionId })?.blockedProfile.id
+    return countdowns
+  }
+
+  private var usageBasedProfiles: [BlockedProfiles] {
+    profiles.filter { $0.blockingStrategyId == UsageBasedBlockingStrategy.id }
   }
 
   var body: some View {
@@ -103,16 +112,17 @@ struct HomeDashboardView: View {
             activeProfileIds: activeProfileIds,
             elapsedTime: strategyManager.elapsedTime,
             pausedProfileIds: pausedProfileIds,
-            stopCountdownProfileId: stopCountdownProfileId,
-            stopCountdownRemaining: strategyManager.stopCountdownRemaining,
+            stopCountdownRemainingByProfileId: stopCountdownRemainingByProfileId,
             isHardModeActionLocked:
               strategyManager.activeSession?.isSessionActionLockedByHardMode() ?? false,
             onManageUsageBasedTapped: onManageUsageBasedTapped,
             onManageOnDemandTapped: onManageOnDemandTapped,
+            onStartAllUsageTapped: toggleUsageProfilesFromHeader,
             onStartTapped: onStartProfile,
             onStopTapped: onStopProfile,
             onEditTapped: onEditProfile,
-            onStatsTapped: onProfileInsightsTapped
+            onStatsTapped: onProfileInsightsTapped,
+            onGrantExtraTimeTapped: grantExtraTime
           )
           .padding(.horizontal, 16)
         } else {
@@ -123,8 +133,7 @@ struct HomeDashboardView: View {
             activeProfileIds: activeProfileIds,
             elapsedTime: strategyManager.elapsedTime,
             pausedProfileIds: pausedProfileIds,
-            stopCountdownProfileId: stopCountdownProfileId,
-            stopCountdownRemaining: strategyManager.stopCountdownRemaining,
+            stopCountdownRemainingByProfileId: stopCountdownRemainingByProfileId,
             isHardModeActionLocked:
               strategyManager.activeSession?.isSessionActionLockedByHardMode() ?? false,
             onManageTapped: onManageProfilesTapped,
@@ -132,6 +141,7 @@ struct HomeDashboardView: View {
             onStopTapped: onStopProfile,
             onEditTapped: onEditProfile,
             onStatsTapped: selectProfile,
+            onGrantExtraTimeTapped: grantExtraTime,
             selectedProfileId: selectedProfile?.id,
             onSelectProfile: selectProfile
           )
@@ -183,6 +193,31 @@ struct HomeDashboardView: View {
   private func createAdvancedProfile() {
     guard !strategyManager.isBlocking else { return }
     onAdvancedCreationTapped()
+  }
+
+  private func startAllUsageProfiles() {
+    for profile in usageBasedProfiles where !activeProfileIds.contains(profile.id) {
+      onStartProfile(profile)
+    }
+  }
+
+  private func stopAllUsageProfiles() {
+    for profile in usageBasedProfiles where activeProfileIds.contains(profile.id) {
+      onStopProfile(profile)
+    }
+  }
+
+  private func toggleUsageProfilesFromHeader() {
+    let hasActiveUsageProfiles = usageBasedProfiles.contains { activeProfileIds.contains($0.id) }
+    if hasActiveUsageProfiles {
+      stopAllUsageProfiles()
+    } else {
+      startAllUsageProfiles()
+    }
+  }
+
+  private func grantExtraTime(_ profile: BlockedProfiles) {
+    strategyManager.grantExtraTime(context: modelContext, profileID: profile.id)
   }
 }
 
