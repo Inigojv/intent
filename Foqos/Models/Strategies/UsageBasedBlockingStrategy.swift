@@ -92,7 +92,7 @@ final class UsageBasedBlockingStrategy: BlockingStrategy {
     configuration: UsageBasedStrategyData,
     forceStart: Bool
   ) {
-    if configuration.enableFiveMinuteWarning && configuration.allowanceInMinutes > 1 {
+    if configuration.enableFiveMinuteWarning {
       UsageBasedNotificationScheduler.requestAuthorization()
     }
 

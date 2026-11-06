@@ -76,7 +76,7 @@ class DeviceActivityMonitorExtension: DeviceActivityMonitor {
       guard let state = UsageBasedActivityScheduler.markWarningSent(for: activity) else {
         return
       }
-      UsageBasedNotificationScheduler.sendFiveMinutesLeft(for: state)
+      UsageBasedNotificationScheduler.sendAllowanceWarning(for: state)
       return
     }
 

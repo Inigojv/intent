@@ -79,7 +79,7 @@ struct UsageBasedConfigurationView: View {
                 VStack(alignment: .leading, spacing: 4) {
                   Text("Allowance warning notification")
 
-                  Text("Receive a warning 1 minute before the end of your allowance")
+                  Text("Receive a warning when your allowance is running out")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 }
@@ -216,7 +216,7 @@ struct UsageBasedConfigurationView: View {
           let normalizedExtraTime = Int(round(extraTimeInMinutes))
           let normalizedCooldown = Int(round(extraTimeCooldownInSeconds))
 
-          if enableFiveMinuteWarning && normalizedAllowance > 1 {
+          if enableFiveMinuteWarning {
             UsageBasedNotificationScheduler.requestAuthorization()
           }
           onSave(

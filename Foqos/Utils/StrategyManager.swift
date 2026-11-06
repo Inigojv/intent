@@ -230,7 +230,7 @@ class StrategyManager: ObservableObject {
 
     if let currentSession = activeSession {
       let configuration = UsageBasedStrategyData.decode(currentSession.blockedProfile.strategyData)
-      if configuration.enableFiveMinuteWarning && configuration.allowanceInMinutes > 1 {
+      if configuration.enableFiveMinuteWarning {
         UsageBasedNotificationScheduler.requestAuthorization()
       }
     }

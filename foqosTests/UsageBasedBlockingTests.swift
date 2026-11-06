@@ -119,7 +119,7 @@ final class UsageBasedBlockingTests: XCTestCase {
     XCTAssertTrue(event.includesPastActivity)
   }
 
-  func testWarningEventFiresFiveMinutesBeforeAllowance() {
+  func testWarningEventFiresAboutTwoMinutesBeforeAllowance() {
     let state = makeState(
       profileId: UUID(),
       sessionId: UUID().uuidString,
@@ -129,7 +129,21 @@ final class UsageBasedBlockingTests: XCTestCase {
 
     XCTAssertEqual(
       UsageBasedActivityScheduler.warningEvent(for: state)?.threshold,
-      DateComponents(minute: 15)
+      DateComponents(minute: 18)
+    )
+  }
+
+  func testWarningEventUsesATwoMinuteLeadForShortAllowances() {
+    let state = makeState(
+      profileId: UUID(),
+      sessionId: UUID().uuidString,
+      windowStart: Date(timeIntervalSince1970: 1_000_000),
+      allowanceInMinutes: 5
+    )
+
+    XCTAssertEqual(
+      UsageBasedActivityScheduler.warningEvent(for: state)?.threshold,
+      DateComponents(minute: 3)
     )
   }
 
@@ -162,7 +176,7 @@ final class UsageBasedBlockingTests: XCTestCase {
     XCTAssertFalse(state.markWarningSent())
   }
 
-  func testAllowanceOfFiveMinutesDoesNotCreateWarningEvent() {
+  func testAllowanceOfFiveMinutesUsesATwoMinuteWarning() {
     let state = makeState(
       profileId: UUID(),
       sessionId: UUID().uuidString,
@@ -170,7 +184,10 @@ final class UsageBasedBlockingTests: XCTestCase {
       allowanceInMinutes: 5
     )
 
-    XCTAssertNil(UsageBasedActivityScheduler.warningEvent(for: state))
+    XCTAssertEqual(
+      UsageBasedActivityScheduler.warningEvent(for: state)?.threshold,
+      DateComponents(minute: 3)
+    )
   }
 
   func testDisabledWarningDoesNotCreateWarningEvent() {

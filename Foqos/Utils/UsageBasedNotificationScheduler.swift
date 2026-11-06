@@ -10,14 +10,14 @@ enum UsageBasedNotificationScheduler {
     }
   }
 
-  static func sendFiveMinutesLeft(for state: UsageBasedMonitoringState) {
+  static func sendAllowanceWarning(for state: UsageBasedMonitoringState) {
     let content = UNMutableNotificationContent()
-    content.title = "5 minutes left"
-    content.body = "Your hourly allowance for selected apps is almost used."
+    content.title = "Time to wrap up"
+    content.body = "Your allowance is running out."
     content.sound = .default
 
     let identifier =
-      "usageBased.fiveMinutesLeft.\(state.profileId.uuidString).\(state.sessionId).\(Int(state.windowStart.timeIntervalSince1970))"
+      "usageBased.allowanceWarning.\(state.profileId.uuidString).\(state.sessionId).\(Int(state.windowStart.timeIntervalSince1970))"
     let request = UNNotificationRequest(
       identifier: identifier,
       content: content,

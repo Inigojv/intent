@@ -472,9 +472,15 @@ enum UsageBasedActivityScheduler {
     event(for: state, thresholdInMinutes: state.allowanceInMinutes)
   }
 
+  static func warningThresholdMinutes(for state: UsageBasedMonitoringState) -> Int? {
+    guard state.enableFiveMinuteWarning, state.allowanceInMinutes > 0 else { return nil }
+    let leadInMinutes = 2
+    return max(1, state.allowanceInMinutes - leadInMinutes)
+  }
+
   static func warningEvent(for state: UsageBasedMonitoringState) -> DeviceActivityEvent? {
-    guard state.enableFiveMinuteWarning, state.allowanceInMinutes > 5 else { return nil }
-    return event(for: state, thresholdInMinutes: state.allowanceInMinutes - 5)
+    guard let thresholdInMinutes = warningThresholdMinutes(for: state) else { return nil }
+    return event(for: state, thresholdInMinutes: thresholdInMinutes)
   }
 
   static func minuteTickEventName(for minute: Int) -> DeviceActivityEvent.Name {
@@ -586,8 +592,14 @@ enum UsageBasedActivityScheduler {
     }
 
     let tickMinutes = Set(1...state.allowanceInMinutes)
+    let warningThreshold = Self.warningThresholdMinutes(for: state)
     for minute in tickMinutes {
-      if minute == state.allowanceInMinutes || (warningEvent(for: state) != nil && minute == state.allowanceInMinutes - 5) {
+      if minute == state.allowanceInMinutes {
+        continue
+      }
+      if let warningThreshold,
+        minute == warningThreshold
+      {
         continue
       }
       events[Self.minuteTickEventName(for: minute)] = Self.event(

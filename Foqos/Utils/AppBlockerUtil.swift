@@ -9,8 +9,6 @@ class AppBlockerUtil {
   )
 
   func activateRestrictions(for profile: SharedData.ProfileSnapshot) {
-    deactivateUsageBasedRestrictions()
-
     let selection = profile.selectedActivity
     applyRestrictions(
       for: profile,
