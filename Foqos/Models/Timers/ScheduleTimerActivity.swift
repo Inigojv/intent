@@ -162,7 +162,7 @@ class ScheduleTimerActivity: TimerActivity {
         categoryTokens: profile.selectedActivity.categoryTokens,
         webDomainTokens: profile.selectedActivity.webDomainTokens,
         allowanceInMinutes: configuration.allowanceInMinutes,
-        enableFiveMinuteWarning: configuration.enableFiveMinuteWarning,
+        enableFiveMinuteWarning: NotificationPreferences.allowanceWarningEnabled,
         extraTimeInMinutes: configuration.extraTimeInMinutes,
         enableExtraTimeReduction: configuration.enableExtraTimeReduction,
         extraTimeCooldownInSeconds: configuration.extraTimeCooldownInSeconds
@@ -184,7 +184,7 @@ class ScheduleTimerActivity: TimerActivity {
       categoryTokens: profile.selectedActivity.categoryTokens,
       webDomainTokens: profile.selectedActivity.webDomainTokens,
       allowanceInMinutes: configuration.allowanceInMinutes,
-      enableFiveMinuteWarning: configuration.enableFiveMinuteWarning,
+      enableFiveMinuteWarning: NotificationPreferences.allowanceWarningEnabled,
       extraTimeInMinutes: configuration.extraTimeInMinutes,
       enableExtraTimeReduction: configuration.enableExtraTimeReduction,
       extraTimeCooldownInSeconds: configuration.extraTimeCooldownInSeconds

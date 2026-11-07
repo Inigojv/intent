@@ -136,6 +136,16 @@ class StrategyManager: ObservableObject {
 
     // Reload widget to reflect any changes from extension (e.g., timer expiration)
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+
+    reconcileUsageAllowanceNotificationState(context: context)
+  }
+
+  func reconcileUsageAllowanceNotificationState(context: ModelContext) {
+    let allowancesOff = areUsageAllowancesOff(context: context)
+    UsageBasedNotificationScheduler.reconcileAllowancesOffReminderCycle(
+      isAllowancesOff: allowancesOff,
+      remindersEnabled: NotificationPreferences.allowancesOffReminderEnabled
+    )
   }
 
   private func pruneStaleUsageMonitoring(context: ModelContext) {
@@ -891,6 +901,10 @@ class StrategyManager: ObservableObject {
 
     // Refresh widgets when session starts
     WidgetCenter.shared.reloadTimelines(ofKind: "ProfileControlWidget")
+
+    if let context = session.modelContext {
+      reconcileUsageAllowanceNotificationState(context: context)
+    }
   }
 
   private func handleSessionEnded(
@@ -936,6 +950,36 @@ class StrategyManager: ObservableObject {
       // Remove all pause timer activities
       DeviceActivityCenterUtil.removeAllPauseTimerActivities()
     }
+
+    reconcileUsageAllowanceNotificationState(context: context)
+  }
+
+  private func areUsageAllowancesOff(context: ModelContext) -> Bool {
+    let usageStrategyId: String? = UsageBasedBlockingStrategy.id
+
+    let activeUsageSessions = (try? context.fetch(
+      FetchDescriptor<BlockedProfileSession>(
+        predicate: #Predicate {
+          $0.endTime == nil && $0.blockedProfile.blockingStrategyId == usageStrategyId
+        }
+      )
+    )) ?? []
+
+    if !activeUsageSessions.isEmpty {
+      return false
+    }
+
+    let usageProfiles = (try? context.fetch(
+      FetchDescriptor<BlockedProfiles>(
+        predicate: #Predicate { $0.blockingStrategyId == usageStrategyId }
+      )
+    )) ?? []
+
+    let hasScheduledUsageAllowance = usageProfiles.contains { profile in
+      profile.schedule?.isActive == true
+    }
+
+    return !hasScheduledUsageAllowance
   }
 
   private func pruneStaleStopCountdowns(context: ModelContext) {

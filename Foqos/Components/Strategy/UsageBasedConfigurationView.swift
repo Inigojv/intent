@@ -9,7 +9,6 @@ struct UsageBasedConfigurationView: View {
   let onSave: (UsageBasedStrategyData) -> Void
 
   @State private var allowanceInMinutes: Double
-  @State private var enableFiveMinuteWarning: Bool
   @State private var extraTimeEnabled: Bool
   @State private var extraTimeInMinutes: Double
   @State private var enableExtraTimeReduction: Bool
@@ -36,9 +35,6 @@ struct UsageBasedConfigurationView: View {
     self.actionTitle = actionTitle
     self.onSave = onSave
     _allowanceInMinutes = State(initialValue: Double(initialConfiguration.allowanceInMinutes))
-    _enableFiveMinuteWarning = State(
-      initialValue: initialConfiguration.enableFiveMinuteWarning
-    )
     _extraTimeEnabled = State(
       initialValue: initialConfiguration.extraTimeInMinutes > 0 || initialConfiguration.enableExtraTimeReduction || initialConfiguration.extraTimeCooldownInSeconds > 0
     )
@@ -73,26 +69,6 @@ struct UsageBasedConfigurationView: View {
             }
 
             VStack(spacing: 0) {
-              Divider()
-
-              HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                  Text("Allowance warning notification")
-
-                  Text("Receive a warning when your allowance is running out")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                }
-
-                Spacer()
-
-                Toggle("", isOn: $enableFiveMinuteWarning)
-                  .labelsHidden()
-                  .toggleStyle(.switch)
-                  .tint(themeManager.themeColor)
-              }
-              .padding(.vertical, 12)
-
               Divider()
 
               HStack(alignment: .top, spacing: 16) {
@@ -216,13 +192,10 @@ struct UsageBasedConfigurationView: View {
           let normalizedExtraTime = Int(round(extraTimeInMinutes))
           let normalizedCooldown = Int(round(extraTimeCooldownInSeconds))
 
-          if enableFiveMinuteWarning {
-            UsageBasedNotificationScheduler.requestAuthorization()
-          }
           onSave(
             UsageBasedStrategyData(
               allowanceInMinutes: normalizedAllowance,
-              enableFiveMinuteWarning: enableFiveMinuteWarning,
+              enableFiveMinuteWarning: NotificationPreferences.allowanceWarningEnabled,
               extraTimeInMinutes: extraTimeEnabled ? normalizedExtraTime : 0,
               enableExtraTimeReduction: extraTimeEnabled && enableExtraTimeReduction,
               extraTimeCooldownInSeconds: extraTimeEnabled ? normalizedCooldown : 0

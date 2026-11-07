@@ -334,10 +334,7 @@ private struct HomeProfileRow: View {
   }
 
   private var usageTotalMinutes: Int {
-    if !isActive {
-      return max(1, usageConfiguration.allowanceInMinutes)
-    }
-    return max(1, strategyState?.allowanceInMinutes ?? usageConfiguration.allowanceInMinutes)
+    max(1, usageConfiguration.allowanceInMinutes)
   }
 
   private var usageUsedMinutes: Int {
@@ -345,8 +342,16 @@ private struct HomeProfileRow: View {
     return strategyState?.usedMinutes ?? 0
   }
 
+  private var usageCappedUsedMinutes: Int {
+    min(usageUsedMinutes, usageTotalMinutes)
+  }
+
   private var usageRemainingMinutes: Int {
     max(0, usageTotalMinutes - usageUsedMinutes)
+  }
+
+  private var usageAllowanceIndicatorText: String {
+    "\(usageCappedUsedMinutes)m / \(usageTotalMinutes)m"
   }
 
   private enum UsageVisualState {
@@ -432,13 +437,11 @@ private struct HomeProfileRow: View {
   }
 
   private var usageBarProgress: CGFloat {
-    CGFloat(
-      UsageBasedActivityScheduler.usageProgress(
-        for: strategyState,
-        isActive: isActive,
-        fallbackAllowanceInMinutes: usageConfiguration.allowanceInMinutes
-      )
-    )
+    if strategyState?.allowanceReached == true {
+      return 1
+    }
+
+    return CGFloat(Double(usageCappedUsedMinutes) / Double(usageTotalMinutes))
   }
 
   private var scheduleInfoText: String {
@@ -568,11 +571,11 @@ private struct HomeProfileRow: View {
       VStack(alignment: .leading, spacing: 6) {
         HStack {
           HStack(spacing: 6) {
-            Circle()
-              .fill(usageBarColor)
-              .frame(width: 8, height: 8)
+            Image(systemName: "hourglass")
+              .font(.system(size: 11, weight: .semibold))
+              .foregroundStyle(usageBarColor)
 
-            Text(usageStateLabelText)
+            Text(usageAllowanceIndicatorText)
               .font(.subheadline)
               .foregroundStyle(.secondary)
           }
@@ -674,20 +677,59 @@ private struct HomeProfileRow: View {
     .accessibilityLabel(isActive ? "Stop or confirm stop for \(profile.name)" : "Start \(profile.name)")
   }
 
+  private var usageQuickActionIconName: String {
+    if !isActive {
+      return "play.fill"
+    }
+
+    if isStopCountdownVisible {
+      return "stop.fill"
+    }
+
+    return activeAction.systemImageName
+  }
+
+  private var usageQuickActionColor: Color {
+    if !isActive {
+      return .green
+    }
+
+    if usageQuickActionIconName == "pause.fill" {
+      return .orange
+    }
+
+    return .red
+  }
+
+  private var usageQuickActionAccessibilityLabel: String {
+    if !isActive {
+      return "Start \(profile.name)"
+    }
+
+    if usageQuickActionIconName == "pause.fill" {
+      return "Pause \(profile.name)"
+    }
+
+    return "Stop \(profile.name)"
+  }
+
+  private var usageQuickActionButton: some View {
+    Button(action: handleActionTap) {
+      Image(systemName: usageQuickActionIconName)
+        .font(.system(size: 16, weight: .bold))
+        .foregroundStyle(usageQuickActionColor)
+        .frame(width: 32, height: 44)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .disabled(isActive ? !canStop : !canStart)
+    .accessibilityLabel(usageQuickActionAccessibilityLabel)
+  }
+
   private var actionMenu: some View {
     Group {
       if profile.blockingStrategyId == UsageBasedBlockingStrategy.id {
-        if shouldShowUsageExtraTimeButton {
-          Button(action: onGrantExtraTimeTapped) {
-            Image(systemName: "plus")
-              .font(.system(size: 16, weight: .bold))
-              .foregroundStyle(.yellow)
-              .frame(width: 32, height: 44)
-              .contentShape(Rectangle())
-          }
-          .buttonStyle(.plain)
-          .accessibilityLabel("Grant extra time for \(profile.name)")
-        }
+        usageQuickActionButton
       } else {
         Menu {
           Button(action: onStatsTapped) {

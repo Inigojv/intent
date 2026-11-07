@@ -16,6 +16,10 @@ struct SettingsView: View {
 
   @State private var showResetBlockingAlert = false
   @State private var showDebugView = false
+  @AppStorage(NotificationPreferences.allowanceWarningEnabledKey)
+  private var allowanceWarningNotificationsEnabled = true
+  @AppStorage(NotificationPreferences.allowancesOffReminderEnabledKey)
+  private var allowancesOffReminderEnabled = false
 
   private var appVersion: String {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -58,6 +62,40 @@ struct SettingsView: View {
         }
 
         AppIconPicker()
+
+        Section("Notifications") {
+          HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Allowance warning")
+              Text("Get a warning as usage limits are about to run out.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $allowanceWarningNotificationsEnabled)
+              .labelsHidden()
+              .tint(themeManager.themeColor)
+          }
+
+          HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Remind me if allowances are off")
+              Text(
+                "Sends reminders 30 minutes after limits go off, and once again 1 hour later."
+              )
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $allowancesOffReminderEnabled)
+              .labelsHidden()
+              .tint(themeManager.themeColor)
+          }
+        }
 
         Section("Help & Troubleshooting") {
           Link(destination: URL(string: "https://www.foqos.app/support.html")!) {
@@ -193,6 +231,20 @@ struct SettingsView: View {
       }
       .sheet(isPresented: $showDebugView) {
         DebugView()
+      }
+      .onChange(of: allowanceWarningNotificationsEnabled) { _, enabled in
+        if enabled {
+          UsageBasedNotificationScheduler.requestAuthorization()
+        }
+      }
+      .onChange(of: allowancesOffReminderEnabled) { _, enabled in
+        if enabled {
+          UsageBasedNotificationScheduler.requestAuthorization()
+        }
+        strategyManager.reconcileUsageAllowanceNotificationState(context: context)
+      }
+      .onAppear {
+        strategyManager.reconcileUsageAllowanceNotificationState(context: context)
       }
     }
   }

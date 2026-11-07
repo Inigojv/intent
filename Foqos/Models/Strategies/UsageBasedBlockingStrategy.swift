@@ -92,7 +92,7 @@ final class UsageBasedBlockingStrategy: BlockingStrategy {
     configuration: UsageBasedStrategyData,
     forceStart: Bool
   ) {
-    if configuration.enableFiveMinuteWarning {
+    if NotificationPreferences.allowanceWarningEnabled {
       UsageBasedNotificationScheduler.requestAuthorization()
     }
 
@@ -111,7 +111,7 @@ final class UsageBasedBlockingStrategy: BlockingStrategy {
         categoryTokens: profile.selectedActivity.categoryTokens,
         webDomainTokens: profile.selectedActivity.webDomainTokens,
         allowanceInMinutes: configuration.allowanceInMinutes,
-        enableFiveMinuteWarning: configuration.enableFiveMinuteWarning,
+        enableFiveMinuteWarning: NotificationPreferences.allowanceWarningEnabled,
         extraTimeInMinutes: configuration.extraTimeInMinutes,
         enableExtraTimeReduction: configuration.enableExtraTimeReduction,
         extraTimeCooldownInSeconds: configuration.extraTimeCooldownInSeconds

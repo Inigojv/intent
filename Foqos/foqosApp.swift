@@ -66,6 +66,7 @@ struct foqosApp: App {
             context === container.mainContext
           else { return }
           FoqosShortcutsProvider.updateAppShortcutParameters()
+          startegyManager.reconcileUsageAllowanceNotificationState(context: context)
         }
         .onOpenURL { url in
           handleUniversalLink(url)
