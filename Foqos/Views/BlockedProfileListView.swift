@@ -54,6 +54,9 @@ struct BlockedProfileListView: View {
 
   @State private var profileToEdit: BlockedProfiles?
   @State private var showErrorAlert = false
+  @State private var errorAlertTitle = "Cannot Delete Active Profile"
+  @State private var errorAlertMessage =
+    "You cannot delete a profile that is currently active. Please switch to a different profile first."
   @State private var editMode: EditMode = .inactive
 
   var body: some View {
@@ -109,6 +112,10 @@ struct BlockedProfileListView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                   if editMode == .inactive {
+                    if isUsageProfileEditLocked(profile) {
+                      presentUsageEditLockedAlert()
+                      return
+                    }
                     profileToEdit = profile
                   }
                 }
@@ -203,14 +210,12 @@ struct BlockedProfileListView: View {
         BlockedProfileDataExportView()
       }
       .alert(
-        "Cannot Delete Active Profile",
+        errorAlertTitle,
         isPresented: $showErrorAlert
       ) {
         Button("OK", role: .cancel) {}
       } message: {
-        Text(
-          "You cannot delete a profile that is currently active. Please switch to a different profile first."
-        )
+        Text(errorAlertMessage)
       }
     }
   }
@@ -226,6 +231,27 @@ struct BlockedProfileListView: View {
     return activeSessionProfileId == nil
   }
 
+  private func isUsageProfileEditLocked(_ profile: BlockedProfiles) -> Bool {
+    guard profile.blockingStrategyId == UsageBasedBlockingStrategy.id else {
+      return false
+    }
+
+    return UsageBasedStrategyData.decode(profile.strategyData).isAllowanceEnabled
+  }
+
+  private func presentUsageEditLockedAlert() {
+    errorAlertTitle = "Disable Allowance To Edit"
+    errorAlertMessage = "Disable this usage-based allowance before editing it."
+    showErrorAlert = true
+  }
+
+  private func presentDeleteActiveProfileAlert() {
+    errorAlertTitle = "Cannot Delete Active Profile"
+    errorAlertMessage =
+      "You cannot delete a profile that is currently active. Please switch to a different profile first."
+    showErrorAlert = true
+  }
+
   private func deleteProfiles(at offsets: IndexSet) {
     let activeSession = BlockedProfileSession.mostRecentActiveSession(
       in: context)
@@ -234,7 +260,7 @@ struct BlockedProfileListView: View {
     for index in offsets {
       let profile = profiles[index]
       if profile.id == activeSession?.blockedProfile.id {
-        showErrorAlert = true
+        presentDeleteActiveProfileAlert()
         return
       }
     }

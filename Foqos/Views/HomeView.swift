@@ -78,7 +78,7 @@ struct HomeView: View {
       },
       onStartProfile: startProfile,
       onStopProfile: strategyButtonPress,
-      onEditProfile: { presentation.profileToEdit = $0 },
+      onEditProfile: editProfile,
       onProfileInsightsTapped: { presentation.profileToShowStats = $0 },
       onLauncherTapped: { presentation.showStartProfilePicker = true },
       onActiveSessionTapped: { presentation.showActiveProfileSessionView = true }
@@ -198,6 +198,23 @@ struct HomeView: View {
     // Quick actions can arrive before onAppear restores the active session.
     strategyManager.loadActiveSession(context: context)
     startProfile(profile)
+  }
+
+  private func editProfile(_ profile: BlockedProfiles) {
+    if isUsageProfileEditLocked(profile) {
+      showErrorAlert(message: "Disable this usage-based allowance before editing it.")
+      return
+    }
+
+    presentation.profileToEdit = profile
+  }
+
+  private func isUsageProfileEditLocked(_ profile: BlockedProfiles) -> Bool {
+    guard profile.blockingStrategyId == UsageBasedBlockingStrategy.id else {
+      return false
+    }
+
+    return UsageBasedStrategyData.decode(profile.strategyData).isAllowanceEnabled
   }
 
   private func loadApp() {

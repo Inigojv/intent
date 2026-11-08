@@ -77,7 +77,7 @@ struct HomePresentations: ViewModifier {
       }
       .sheet(isPresented: $presentation.showStartProfilePicker) {
         StartProfilePickerView(
-          profiles: profiles,
+          profiles: profiles.filter { $0.blockingStrategyId != UsageBasedBlockingStrategy.id },
           isBlocking: strategyManager.isBlocking,
           activeSessionProfileId: strategyManager.activeSession?.blockedProfile.id,
           startingProfileId: presentation.navigateToProfileId,

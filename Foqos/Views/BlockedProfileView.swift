@@ -21,6 +21,12 @@ struct BlockedProfileView: View {
   @EnvironmentObject private var nfcWriter: NFCWriter
   @EnvironmentObject private var strategyManager: StrategyManager
 
+  @Query(
+    filter: #Predicate<BlockedProfileSession> { $0.endTime == nil },
+    sort: \BlockedProfileSession.startTime,
+    order: .reverse
+  ) private var activeSessions: [BlockedProfileSession]
+
   // If profile is nil, we're creating a new profile
   var profile: BlockedProfiles?
   let preferredStrategyId: String?
@@ -64,8 +70,12 @@ struct BlockedProfileView: View {
     profile != nil
   }
 
+  private var hasActiveOnDemandSession: Bool {
+    activeSessions.contains { $0.blockedProfile.blockingStrategyId != UsageBasedBlockingStrategy.id }
+  }
+
   private var isBlocking: Bool {
-    strategyManager.activeSession?.isActive ?? false
+    hasActiveOnDemandSession
   }
 
   private var strategyPickerStrategies: [BlockingStrategy] {
