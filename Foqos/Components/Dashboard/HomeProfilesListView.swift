@@ -83,6 +83,7 @@ struct HomeProfilesByStrategyListView: View {
   let isBlocking: Bool
   let hasActiveOnDemandSession: Bool
   let activeProfileIds: Set<UUID>
+  let enabledUsageProfileIds: Set<UUID>
   let elapsedTime: TimeInterval
   let pausedProfileIds: Set<UUID>
   let stopCountdownRemainingByProfileId: [UUID: Int]
@@ -112,6 +113,7 @@ struct HomeProfilesByStrategyListView: View {
         isBlocking: isBlocking,
         hasActiveOnDemandSession: hasActiveOnDemandSession,
         activeProfileIds: activeProfileIds,
+        enabledUsageProfileIds: enabledUsageProfileIds,
         elapsedTime: elapsedTime,
         pausedProfileIds: pausedProfileIds,
         stopCountdownRemainingByProfileId: stopCountdownRemainingByProfileId,
@@ -132,6 +134,7 @@ struct HomeProfilesByStrategyListView: View {
           isBlocking: isBlocking,
           hasActiveOnDemandSession: hasActiveOnDemandSession,
           activeProfileIds: activeProfileIds,
+          enabledUsageProfileIds: enabledUsageProfileIds,
           elapsedTime: elapsedTime,
           pausedProfileIds: pausedProfileIds,
           stopCountdownRemainingByProfileId: stopCountdownRemainingByProfileId,
@@ -155,6 +158,7 @@ private struct HomeProfilesStrategySection: View {
   let isBlocking: Bool
   let hasActiveOnDemandSession: Bool
   let activeProfileIds: Set<UUID>
+  let enabledUsageProfileIds: Set<UUID>
   let elapsedTime: TimeInterval
   let pausedProfileIds: Set<UUID>
   let stopCountdownRemainingByProfileId: [UUID: Int]
@@ -171,8 +175,9 @@ private struct HomeProfilesStrategySection: View {
     title == "Usage based"
   }
 
-  private var hasActiveProfilesInSection: Bool {
-    profiles.contains { activeProfileIds.contains($0.id) }
+  private var hasEnabledUsageProfilesInSection: Bool {
+    guard isUsageBasedSection else { return false }
+    return profiles.contains { enabledUsageProfileIds.contains($0.id) }
   }
 
   private var hasStopCountdownInSection: Bool {
@@ -183,7 +188,7 @@ private struct HomeProfilesStrategySection: View {
     if hasStopCountdownInSection {
       return "Stopping..."
     }
-    if hasActiveProfilesInSection {
+    if hasEnabledUsageProfilesInSection {
       return "Stop all"
     }
     return "Start"
@@ -193,14 +198,14 @@ private struct HomeProfilesStrategySection: View {
     if hasStopCountdownInSection {
       return "timer"
     }
-    return hasActiveProfilesInSection ? "stop.fill" : "play.fill"
+    return hasEnabledUsageProfilesInSection ? "stop.fill" : "play.fill"
   }
 
   private var usageHeaderColor: Color {
     if hasStopCountdownInSection {
       return .orange
     }
-    return hasActiveProfilesInSection ? .red : .green
+    return hasEnabledUsageProfilesInSection ? .red : .green
   }
 
   var body: some View {
@@ -433,6 +438,7 @@ private struct HomeProfileRow: View {
   private var shouldShowUsageExtraTimeButton: Bool {
     profile.blockingStrategyId == UsageBasedBlockingStrategy.id
       && isActive
+      && usageConfiguration.extraTimeInMinutes > 0
       && strategyState?.allowanceReached == true
   }
 
@@ -631,105 +637,20 @@ private struct HomeProfileRow: View {
     }
   }
 
-  private var actionButtonTitle: String {
-    if !isActive {
-      return "Start"
-    }
-
-    if isStopCountdownVisible, let remaining = stopCountdownRemaining {
-      return "Stop (\(remaining)s)"
-    }
-
-    return activeAction.title
-  }
-
-  private func handleActionTap() {
-    if !isActive {
-      onStartTapped()
-      return
-    }
-
-    if isStopCountdownVisible {
-      strategyManager.confirmStopCountdown(context: context, profileID: profile.id)
-      return
-    }
-
-    onStopTapped()
-  }
-
-  private var actionButton: some View {
-    Button(action: handleActionTap) {
-      HStack(spacing: 6) {
-        Image(systemName: isActive ? (isStopCountdownVisible ? "stop.fill" : activeAction.systemImageName) : "play.fill")
-          .font(.system(size: 12, weight: .semibold))
-
-        Text(actionButtonTitle)
-          .font(.subheadline)
-          .fontWeight(.semibold)
-      }
-      .frame(minWidth: 72)
-      .padding(.horizontal, 12)
-      .padding(.vertical, 8)
-    }
-    .buttonStyle(.borderedProminent)
-    .tint(isStopCountdownVisible ? .orange : themeManager.themeColor)
-    .disabled(isActive ? !canStop : !canStart)
-    .accessibilityLabel(isActive ? "Stop or confirm stop for \(profile.name)" : "Start \(profile.name)")
-  }
-
-  private var usageQuickActionIconName: String {
-    if !isActive {
-      return "play.fill"
-    }
-
-    if isStopCountdownVisible {
-      return "stop.fill"
-    }
-
-    return activeAction.systemImageName
-  }
-
-  private var usageQuickActionColor: Color {
-    if !isActive {
-      return .green
-    }
-
-    if usageQuickActionIconName == "pause.fill" {
-      return .orange
-    }
-
-    return .red
-  }
-
-  private var usageQuickActionAccessibilityLabel: String {
-    if !isActive {
-      return "Start \(profile.name)"
-    }
-
-    if usageQuickActionIconName == "pause.fill" {
-      return "Pause \(profile.name)"
-    }
-
-    return "Stop \(profile.name)"
-  }
-
-  private var usageQuickActionButton: some View {
-    Button(action: handleActionTap) {
-      Image(systemName: usageQuickActionIconName)
-        .font(.system(size: 16, weight: .bold))
-        .foregroundStyle(usageQuickActionColor)
-        .frame(width: 32, height: 44)
-        .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .disabled(isActive ? !canStop : !canStart)
-    .accessibilityLabel(usageQuickActionAccessibilityLabel)
-  }
-
   private var actionMenu: some View {
     Group {
       if profile.blockingStrategyId == UsageBasedBlockingStrategy.id {
-        usageQuickActionButton
+        if shouldShowUsageExtraTimeButton {
+          Button(action: onGrantExtraTimeTapped) {
+            Image(systemName: "plus")
+              .font(.system(size: 16, weight: .bold))
+              .foregroundStyle(.yellow)
+              .frame(width: 32, height: 44)
+              .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("Grant extra time for \(profile.name)")
+        }
       } else {
         Menu {
           Button(action: onStatsTapped) {

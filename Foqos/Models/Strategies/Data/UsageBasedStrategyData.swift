@@ -7,12 +7,14 @@ struct UsageBasedStrategyData: Codable, Equatable {
   static let defaultExtraTimeReductionEnabled = false
   static let defaultExtraTimeCooldownInSeconds = 0
   static let defaultFiveMinuteWarningEnabled = true
+  static let defaultAllowanceEnabled = true
   static let allowanceRangeInMinutes = 5...60
   static let extraTimeRangeInMinutes = 0...30
   static let disableCountdownRangeInSeconds = 5...60
   static let extraTimeCooldownRangeInSeconds = 0...60
 
   var allowanceInMinutes: Int
+  var isAllowanceEnabled: Bool
   var enableFiveMinuteWarning: Bool
   var disableCountdownInSeconds: Int
   var extraTimeInMinutes: Int
@@ -21,6 +23,7 @@ struct UsageBasedStrategyData: Codable, Equatable {
 
   init(
     allowanceInMinutes: Int,
+    isAllowanceEnabled: Bool = defaultAllowanceEnabled,
     enableFiveMinuteWarning: Bool = defaultFiveMinuteWarningEnabled,
     disableCountdownInSeconds: Int = defaultDisableCountdownInSeconds,
     extraTimeInMinutes: Int = defaultExtraTimeInMinutes,
@@ -28,6 +31,7 @@ struct UsageBasedStrategyData: Codable, Equatable {
     extraTimeCooldownInSeconds: Int = defaultExtraTimeCooldownInSeconds
   ) {
     self.allowanceInMinutes = allowanceInMinutes
+    self.isAllowanceEnabled = isAllowanceEnabled
     self.enableFiveMinuteWarning = enableFiveMinuteWarning
     self.disableCountdownInSeconds = disableCountdownInSeconds
     self.extraTimeInMinutes = extraTimeInMinutes
@@ -37,6 +41,7 @@ struct UsageBasedStrategyData: Codable, Equatable {
 
   private enum CodingKeys: String, CodingKey {
     case allowanceInMinutes
+    case isAllowanceEnabled
     case enableFiveMinuteWarning
     case disableCountdownInSeconds
     case extraTimeInMinutes
@@ -47,6 +52,10 @@ struct UsageBasedStrategyData: Codable, Equatable {
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     allowanceInMinutes = try container.decode(Int.self, forKey: .allowanceInMinutes)
+    isAllowanceEnabled = try container.decodeIfPresent(
+      Bool.self,
+      forKey: .isAllowanceEnabled
+    ) ?? Self.defaultAllowanceEnabled
     enableFiveMinuteWarning = try container.decodeIfPresent(
       Bool.self,
       forKey: .enableFiveMinuteWarning
@@ -113,6 +122,7 @@ struct UsageBasedStrategyData: Codable, Equatable {
 
     return UsageBasedStrategyData(
       allowanceInMinutes: normalizedValue,
+      isAllowanceEnabled: isAllowanceEnabled,
       enableFiveMinuteWarning: enableFiveMinuteWarning,
       disableCountdownInSeconds: clampedCountdown,
       extraTimeInMinutes: clampedExtraTime,

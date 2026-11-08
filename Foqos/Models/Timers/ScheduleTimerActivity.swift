@@ -50,9 +50,22 @@ class ScheduleTimerActivity: TimerActivity {
       return
     }
 
+    if !isCurrentTimeWithinScheduleWindow(schedule) {
+      log.info("Start schedule timer activity for \(profileId), outside schedule window")
+      return
+    }
+
     if !schedule.olderThan15Minutes() {
       log.info("Start schedule timer activity for \(profileId), schedule is too new")
       return
+    }
+
+    if profile.blockingStrategyId == Self.usageBasedBlockingStrategyId {
+      let configuration = UsageBasedStrategyData.decode(profile.strategyData)
+      if !configuration.isAllowanceEnabled {
+        log.info("Start schedule timer activity for \(profileId), allowance is disabled")
+        return
+      }
     }
 
     log.info("Start schedule timer activity for \(profileId), profile: \(profileId)")
@@ -84,6 +97,25 @@ class ScheduleTimerActivity: TimerActivity {
     )
 
     startRestrictions(for: profile, session: session)
+  }
+
+  private func isCurrentTimeWithinScheduleWindow(_ schedule: BlockedProfileSchedule) -> Bool {
+    let calendar = Calendar.current
+    let now = Date()
+
+    guard schedule.isTodayScheduled(now: now, calendar: calendar) else {
+      return false
+    }
+
+    let minutesNow = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
+    let startMinutes = schedule.startHour * 60 + schedule.startMinute
+    let endMinutes = schedule.endHour * 60 + schedule.endMinute
+
+    if endMinutes >= startMinutes {
+      return minutesNow >= startMinutes && minutesNow < endMinutes
+    }
+
+    return minutesNow >= startMinutes || minutesNow < endMinutes
   }
 
   func stop(for profile: SharedData.ProfileSnapshot) {

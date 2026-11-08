@@ -76,6 +76,15 @@ struct HomeDashboardView: View {
     profiles.filter { $0.blockingStrategyId == UsageBasedBlockingStrategy.id }
   }
 
+  private var enabledUsageProfileIds: Set<UUID> {
+    Set(
+      usageBasedProfiles.compactMap { profile in
+        let configuration = UsageBasedStrategyData.decode(profile.strategyData)
+        return configuration.isAllowanceEnabled ? profile.id : nil
+      }
+    )
+  }
+
   var body: some View {
     HomeDashboardLayout(preferredCompactColumn: $preferredCompactColumn) { showsProfileInsights in
       dashboardContent(showsProfileInsights: showsProfileInsights)
@@ -110,6 +119,7 @@ struct HomeDashboardView: View {
             isBlocking: strategyManager.isBlocking,
             hasActiveOnDemandSession: hasActiveOnDemandSession,
             activeProfileIds: activeProfileIds,
+            enabledUsageProfileIds: enabledUsageProfileIds,
             elapsedTime: strategyManager.elapsedTime,
             pausedProfileIds: pausedProfileIds,
             stopCountdownRemainingByProfileId: stopCountdownRemainingByProfileId,
@@ -196,24 +206,73 @@ struct HomeDashboardView: View {
   }
 
   private func startAllUsageProfiles() {
+    setUsageAllowancesEnabled(true)
+
     for profile in usageBasedProfiles where !activeProfileIds.contains(profile.id) {
+      if let schedule = profile.schedule, schedule.isActive, !isScheduleActiveNow(schedule) {
+        continue
+      }
       onStartProfile(profile)
     }
   }
 
   private func stopAllUsageProfiles() {
+    setUsageAllowancesEnabled(false)
+
     for profile in usageBasedProfiles where activeProfileIds.contains(profile.id) {
       onStopProfile(profile)
     }
   }
 
   private func toggleUsageProfilesFromHeader() {
-    let hasActiveUsageProfiles = usageBasedProfiles.contains { activeProfileIds.contains($0.id) }
-    if hasActiveUsageProfiles {
+    let hasEnabledUsageAllowances = !enabledUsageProfileIds.isEmpty
+    if hasEnabledUsageAllowances {
       stopAllUsageProfiles()
     } else {
       startAllUsageProfiles()
     }
+  }
+
+  private func setUsageAllowancesEnabled(_ enabled: Bool) {
+    var didUpdateAnyProfile = false
+
+    for profile in usageBasedProfiles {
+      var configuration = UsageBasedStrategyData.decode(profile.strategyData)
+      guard configuration.isAllowanceEnabled != enabled else { continue }
+
+      configuration.isAllowanceEnabled = enabled
+      profile.strategyData = UsageBasedStrategyData.encode(configuration)
+      profile.updatedAt = Date()
+      BlockedProfiles.updateSnapshot(for: profile)
+      didUpdateAnyProfile = true
+    }
+
+    guard didUpdateAnyProfile else { return }
+
+    do {
+      try modelContext.save()
+    } catch {
+      strategyManager.errorMessage = "Failed to update usage allowance state: \(error.localizedDescription)"
+    }
+  }
+
+  private func isScheduleActiveNow(_ schedule: BlockedProfileSchedule) -> Bool {
+    let calendar = Calendar.current
+    let now = Date()
+
+    guard schedule.isTodayScheduled(now: now, calendar: calendar) else {
+      return false
+    }
+
+    let minutesNow = calendar.component(.hour, from: now) * 60 + calendar.component(.minute, from: now)
+    let startMinutes = schedule.startHour * 60 + schedule.startMinute
+    let endMinutes = schedule.endHour * 60 + schedule.endMinute
+
+    if endMinutes >= startMinutes {
+      return minutesNow >= startMinutes && minutesNow < endMinutes
+    }
+
+    return minutesNow >= startMinutes || minutesNow < endMinutes
   }
 
   private func grantExtraTime(_ profile: BlockedProfiles) {

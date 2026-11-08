@@ -975,11 +975,11 @@ class StrategyManager: ObservableObject {
       )
     )) ?? []
 
-    let hasScheduledUsageAllowance = usageProfiles.contains { profile in
-      profile.schedule?.isActive == true
+    let hasEnabledUsageAllowance = usageProfiles.contains { profile in
+      UsageBasedStrategyData.decode(profile.strategyData).isAllowanceEnabled
     }
 
-    return !hasScheduledUsageAllowance
+    return !hasEnabledUsageAllowance
   }
 
   private func pruneStaleStopCountdowns(context: ModelContext) {

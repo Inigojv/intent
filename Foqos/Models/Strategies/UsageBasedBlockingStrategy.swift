@@ -92,6 +92,17 @@ final class UsageBasedBlockingStrategy: BlockingStrategy {
     configuration: UsageBasedStrategyData,
     forceStart: Bool
   ) {
+    var configuration = configuration
+    if !configuration.isAllowanceEnabled {
+      configuration.isAllowanceEnabled = true
+      if let data = UsageBasedStrategyData.encode(configuration) {
+        profile.strategyData = data
+        profile.updatedAt = Date()
+        try? context.save()
+        BlockedProfiles.updateSnapshot(for: profile)
+      }
+    }
+
     if NotificationPreferences.allowanceWarningEnabled {
       UsageBasedNotificationScheduler.requestAuthorization()
     }

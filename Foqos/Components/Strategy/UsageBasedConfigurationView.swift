@@ -9,6 +9,7 @@ struct UsageBasedConfigurationView: View {
   let onSave: (UsageBasedStrategyData) -> Void
 
   @State private var allowanceInMinutes: Double
+  @State private var isAllowanceEnabled: Bool
   @State private var extraTimeEnabled: Bool
   @State private var extraTimeInMinutes: Double
   @State private var enableExtraTimeReduction: Bool
@@ -35,6 +36,7 @@ struct UsageBasedConfigurationView: View {
     self.actionTitle = actionTitle
     self.onSave = onSave
     _allowanceInMinutes = State(initialValue: Double(initialConfiguration.allowanceInMinutes))
+    _isAllowanceEnabled = State(initialValue: initialConfiguration.isAllowanceEnabled)
     _extraTimeEnabled = State(
       initialValue: initialConfiguration.extraTimeInMinutes > 0 || initialConfiguration.enableExtraTimeReduction || initialConfiguration.extraTimeCooldownInSeconds > 0
     )
@@ -195,6 +197,7 @@ struct UsageBasedConfigurationView: View {
           onSave(
             UsageBasedStrategyData(
               allowanceInMinutes: normalizedAllowance,
+              isAllowanceEnabled: isAllowanceEnabled,
               enableFiveMinuteWarning: NotificationPreferences.allowanceWarningEnabled,
               extraTimeInMinutes: extraTimeEnabled ? normalizedExtraTime : 0,
               enableExtraTimeReduction: extraTimeEnabled && enableExtraTimeReduction,
