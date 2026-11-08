@@ -1,6 +1,7 @@
 import DeviceActivity
 import Foundation
 import ManagedSettings
+import OSLog
 
 struct UsageBasedMonitoringState: Codable, Equatable {
   let profileId: UUID
@@ -20,6 +21,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
   var allowanceReached = false
   var extraTimeUsedCount = 0
   var extraTimeCooldownUntil: Date?
+  var monitorRevision: Int
 
   init(
     profileId: UUID,
@@ -38,7 +40,8 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     warningSent: Bool = false,
     allowanceReached: Bool = false,
     extraTimeUsedCount: Int = 0,
-    extraTimeCooldownUntil: Date? = nil
+    extraTimeCooldownUntil: Date? = nil,
+    monitorRevision: Int = 0
   ) {
     self.profileId = profileId
     self.sessionId = sessionId
@@ -57,6 +60,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     self.allowanceReached = allowanceReached
     self.extraTimeUsedCount = extraTimeUsedCount
     self.extraTimeCooldownUntil = extraTimeCooldownUntil
+    self.monitorRevision = monitorRevision
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -77,6 +81,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     case allowanceReached
     case extraTimeUsedCount
     case extraTimeCooldownUntil
+    case monitorRevision
   }
 
   init(from decoder: Decoder) throws {
@@ -113,6 +118,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     allowanceReached = try container.decodeIfPresent(Bool.self, forKey: .allowanceReached) ?? false
     extraTimeUsedCount = try container.decodeIfPresent(Int.self, forKey: .extraTimeUsedCount) ?? 0
     extraTimeCooldownUntil = try container.decodeIfPresent(Date.self, forKey: .extraTimeCooldownUntil)
+    monitorRevision = try container.decodeIfPresent(Int.self, forKey: .monitorRevision) ?? 0
   }
 
   mutating func grantExtraTime(at date: Date = Date()) -> Int {
@@ -134,13 +140,14 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     extraTimeCooldownUntil = date.addingTimeInterval(Double(extraTimeCooldownInSeconds))
     warningSent = false
     allowanceReached = false
+    monitorRevision += 1
     return grantAmount
   }
 
   var activityName: DeviceActivityName {
     DeviceActivityName(
       rawValue:
-        "\(UsageBasedActivityScheduler.activityPrefix):\(profileId.uuidString):\(sessionId):\(Int(windowStart.timeIntervalSince1970))"
+        "\(UsageBasedActivityScheduler.activityPrefix):\(profileId.uuidString):\(sessionId):\(Int(windowStart.timeIntervalSince1970)):\(monitorRevision)"
     )
   }
 
@@ -162,6 +169,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     usedMinutes = 0
     warningSent = false
     allowanceReached = false
+    monitorRevision = 0
   }
 
   mutating func recordUsageTick(minute: Int) {
@@ -178,6 +186,18 @@ enum UsageBasedActivityScheduler {
   private static let stateKey = "usageBasedBlocking.monitoringState"
   private static let statesKey = "usageBasedBlocking.monitoringStates"
   private static let suite = UserDefaults(suiteName: "group.com.inigojv.cntrl")!
+  private static let log = Logger(
+    subsystem: "com.foqos.monitor",
+    category: "UsageBasedActivityScheduler"
+  )
+
+  enum ReconcileMode: Equatable {
+    case recoverExistingSession(UsageBasedMonitoringState)
+    case migrateSameHour(UsageBasedMonitoringState, duplicates: [UsageBasedMonitoringState])
+    case transitionToNewHour(UsageBasedMonitoringState)
+    case startFresh
+    case ambiguousFutureState
+  }
 
   static var allStates: [UsageBasedMonitoringState] {
     if let data = suite.data(forKey: statesKey),
@@ -204,11 +224,104 @@ enum UsageBasedActivityScheduler {
   }
 
   static func state(for sessionId: String) -> UsageBasedMonitoringState? {
-    allStates.filter { $0.sessionId == sessionId }.last
+    let matches = allStates.filter { $0.sessionId == sessionId }
+    guard !matches.isEmpty else { return nil }
+
+    let profileIDs = Set(matches.map(\ .profileId))
+    if profileIDs.count > 1 {
+      log.error("Ambiguous state ownership for sessionId=\(sessionId, privacy: .public): multiple profile IDs found")
+      return nil
+    }
+
+    return matches.max(by: { $0.windowStart < $1.windowStart })
   }
 
   static func state(for profileId: UUID) -> UsageBasedMonitoringState? {
     allStates.filter { $0.profileId == profileId }.last
+  }
+
+  static func state(
+    for profileId: UUID,
+    sessionId: String,
+    at date: Date = Date(),
+    calendar: Calendar = .current
+  ) -> UsageBasedMonitoringState? {
+    guard let windowStart = hourlyWindow(containing: date, calendar: calendar)?.start else {
+      return nil
+    }
+
+    return allStates.first {
+      $0.profileId == profileId
+        && $0.sessionId == sessionId
+        && $0.windowStart == windowStart
+    }
+  }
+
+  private static func isLessPreferredState(
+    _ lhs: UsageBasedMonitoringState,
+    _ rhs: UsageBasedMonitoringState
+  ) -> Bool {
+    if lhs.allowanceInMinutes != rhs.allowanceInMinutes {
+      return lhs.allowanceInMinutes < rhs.allowanceInMinutes
+    }
+
+    if lhs.usedMinutes != rhs.usedMinutes {
+      return lhs.usedMinutes < rhs.usedMinutes
+    }
+
+    return lhs.sessionId < rhs.sessionId
+  }
+
+  static func chooseAuthoritativeState(
+    candidates: [UsageBasedMonitoringState],
+    preferredSessionId: String? = nil
+  ) -> UsageBasedMonitoringState? {
+    guard !candidates.isEmpty else { return nil }
+
+    if let preferredSessionId,
+      let preferred = candidates.first(where: { $0.sessionId == preferredSessionId })
+    {
+      let best = candidates.max(by: isLessPreferredState)!
+      return isLessPreferredState(preferred, best) ? best : preferred
+    }
+
+    return candidates.max(by: isLessPreferredState)
+  }
+
+  static func resolveReconcileMode(
+    profileId: UUID,
+    sessionId: String,
+    windowStart: Date,
+    states: [UsageBasedMonitoringState]
+  ) -> ReconcileMode {
+    let profileStates = states.filter { $0.profileId == profileId }
+    let sessionStates = profileStates.filter { $0.sessionId == sessionId }
+
+    if let sameSessionSameWindow = sessionStates.first(where: { $0.windowStart == windowStart }) {
+      return .recoverExistingSession(sameSessionSameWindow)
+    }
+
+    if let latestForSession = sessionStates.max(by: { $0.windowStart < $1.windowStart }) {
+      if latestForSession.windowStart < windowStart {
+        return .transitionToNewHour(latestForSession)
+      }
+
+      return .ambiguousFutureState
+    }
+
+    let sameHourProfileStates = profileStates.filter { $0.windowStart == windowStart }
+    guard !sameHourProfileStates.isEmpty else {
+      return .startFresh
+    }
+
+    guard let authoritative = chooseAuthoritativeState(candidates: sameHourProfileStates) else {
+      return .startFresh
+    }
+
+    let duplicates = sameHourProfileStates.filter {
+      !stateIdentityEquals($0, authoritative)
+    }
+    return .migrateSameHour(authoritative, duplicates: duplicates)
   }
 
   static func combinedReachedRestrictions(
@@ -253,7 +366,7 @@ enum UsageBasedActivityScheduler {
 
   static func profileId(from activity: DeviceActivityName) -> UUID? {
     let components = activity.rawValue.split(separator: ":")
-    guard components.count == 4,
+    guard components.count >= 4,
       components[0] == Substring(activityPrefix)
     else {
       return nil
@@ -263,7 +376,7 @@ enum UsageBasedActivityScheduler {
 
   static func sessionId(from activity: DeviceActivityName) -> String? {
     let components = activity.rawValue.split(separator: ":")
-    guard components.count == 4,
+    guard components.count >= 4,
       components[0] == Substring(activityPrefix),
       UUID(uuidString: String(components[1])) != nil
     else {
@@ -370,10 +483,75 @@ enum UsageBasedActivityScheduler {
       throw UsageBasedActivityError.invalidHourlyWindow
     }
 
-    guard var state = state(for: sessionId),
-      state.profileId == profileId
-    else {
-      UsageBasedActivityScheduler.rebuildRestrictions()
+    let mode = resolveReconcileMode(
+      profileId: profileId,
+      sessionId: sessionId,
+      windowStart: window.start,
+      states: allStates
+    )
+
+    switch mode {
+    case .recoverExistingSession(let recovered):
+      let center = DeviceActivityCenter()
+      if !center.activities.contains(recovered.activityName) {
+        try schedule(recovered, window: window, calendar: calendar)
+      }
+
+    case .transitionToNewHour(var existingSessionState):
+      let center = DeviceActivityCenter()
+      center.stopMonitoring([existingSessionState.activityName])
+      existingSessionState.beginWindow(at: window.start)
+      save(existingSessionState)
+      rebuildRestrictions()
+      try schedule(existingSessionState, window: window, calendar: calendar)
+
+    case .migrateSameHour(let authoritative, let duplicates):
+      if duplicates.count > 0 {
+        log.warning(
+          "Duplicate same-hour states detected for profile=\(profileId.uuidString, privacy: .public). Migrating authoritative session=\(authoritative.sessionId, privacy: .public) to target session=\(sessionId, privacy: .public)"
+        )
+      }
+
+      let migrated = UsageBasedMonitoringState(
+        profileId: profileId,
+        sessionId: sessionId,
+        applicationTokens: applicationTokens,
+        categoryTokens: categoryTokens,
+        webDomainTokens: webDomainTokens,
+        baseAllowanceInMinutes: authoritative.baseAllowanceInMinutes,
+        allowanceInMinutes: authoritative.allowanceInMinutes,
+        enableFiveMinuteWarning: enableFiveMinuteWarning,
+        extraTimeInMinutes: extraTimeInMinutes,
+        enableExtraTimeReduction: enableExtraTimeReduction,
+        extraTimeCooldownInSeconds: extraTimeCooldownInSeconds,
+        windowStart: authoritative.windowStart,
+        usedMinutes: authoritative.usedMinutes,
+        warningSent: authoritative.warningSent,
+        allowanceReached: authoritative.allowanceReached,
+        extraTimeUsedCount: authoritative.extraTimeUsedCount,
+        extraTimeCooldownUntil: authoritative.extraTimeCooldownUntil
+      )
+
+      save(migrated)
+
+      let sessionsToClear = Set(([authoritative] + duplicates).map(\ .sessionId)).subtracting([sessionId])
+      for obsoleteSessionId in sessionsToClear {
+        let obsoleteStates = allStates.filter {
+          $0.profileId == profileId
+            && $0.windowStart == window.start
+            && $0.sessionId == obsoleteSessionId
+        }
+        for obsolete in obsoleteStates {
+          DeviceActivityCenter().stopMonitoring([obsolete.activityName])
+        }
+        clear(sessionId: obsoleteSessionId)
+      }
+
+      rebuildRestrictions()
+      try schedule(migrated, window: window, calendar: calendar)
+
+    case .startFresh:
+      rebuildRestrictions()
       try start(
         profileId: profileId,
         sessionId: sessionId,
@@ -388,24 +566,12 @@ enum UsageBasedActivityScheduler {
         at: date,
         calendar: calendar
       )
-      return
-    }
 
-    let center = DeviceActivityCenter()
-    if state.windowStart != window.start {
-    center.stopMonitoring([state.activityName])
-
-    state.beginWindow(at: window.start)
-    save(state)
-
-    rebuildRestrictions()
-
-    try schedule(state, window: window, calendar: calendar)
-    return
-}
-
-    if !center.activities.contains(state.activityName) {
-      try schedule(state, window: window, calendar: calendar)
+    case .ambiguousFutureState:
+      log.error(
+        "Ambiguous reconciliation for profile=\(profileId.uuidString, privacy: .public), session=\(sessionId, privacy: .public): found future-window state"
+      )
+      throw UsageBasedActivityError.invalidHourlyWindow
     }
   }
 
@@ -421,6 +587,8 @@ enum UsageBasedActivityScheduler {
       return nil
     }
 
+    let previousActivity = state.activityName
+
     let grantAmount = state.grantExtraTime(at: date)
     guard grantAmount > 0 else {
       return nil
@@ -430,9 +598,10 @@ enum UsageBasedActivityScheduler {
     rebuildRestrictions()
 
     do {
-    try schedule(state, window: window, calendar: calendar)
+      DeviceActivityCenter().stopMonitoring([previousActivity])
+      try schedule(state, window: window, calendar: calendar)
     } catch {
-    return nil
+      return nil
     }
 
     return state
@@ -458,6 +627,7 @@ enum UsageBasedActivityScheduler {
     let center = DeviceActivityCenter()
     let usageActivities = center.activities.filter { $0.rawValue.hasPrefix("\(activityPrefix):") }
     let activeSessionIds = Set(allStates.map(\.sessionId))
+    let activeActivityNames = Set(allStates.map(\.activityName))
 
     for activity in usageActivities {
       guard let activityProfileId = Self.profileId(from: activity) else { continue }
@@ -465,9 +635,10 @@ enum UsageBasedActivityScheduler {
 
       let isSameProfile = activityProfileId == profileId
       let isSameSession = sessionId == activitySessionId
-      let isStale = !activeSessionIds.contains(activitySessionId)
+      let isStaleSession = !activeSessionIds.contains(activitySessionId)
+      let isStaleActivityIdentity = !activeActivityNames.contains(activity)
 
-      if (isSameProfile && !isSameSession) || isStale {
+      if (isSameProfile && !isSameSession) || isStaleSession || isStaleActivityIdentity {
         center.stopMonitoring([activity])
       }
     }
@@ -625,12 +796,25 @@ enum UsageBasedActivityScheduler {
   }
 
   private static func save(_ state: UsageBasedMonitoringState) {
-    var states = allStates.filter { $0.sessionId != state.sessionId }
-    states.append(state)
+    var states = allStates
+    if let index = states.firstIndex(where: { stateIdentityEquals($0, state) }) {
+      states[index] = state
+    } else {
+      states.append(state)
+    }
 
     guard let data = try? JSONEncoder().encode(states) else { return }
     suite.set(data, forKey: statesKey)
     suite.removeObject(forKey: stateKey)
+  }
+
+  private static func stateIdentityEquals(
+    _ lhs: UsageBasedMonitoringState,
+    _ rhs: UsageBasedMonitoringState
+  ) -> Bool {
+    lhs.profileId == rhs.profileId
+      && lhs.sessionId == rhs.sessionId
+      && lhs.windowStart == rhs.windowStart
   }
 
   private static func clear(sessionId: String) {

@@ -5,6 +5,7 @@ struct HomeProfilesListView: View {
   let isBlocking: Bool
   let hasActiveOnDemandSession: Bool
   let activeProfileIds: Set<UUID>
+  let activeUsageSessionIdByProfileId: [UUID: String]
   let elapsedTime: TimeInterval
   let pausedProfileIds: Set<UUID>
   let stopCountdownRemainingByProfileId: [UUID: Int]
@@ -14,7 +15,7 @@ struct HomeProfilesListView: View {
   let onStopTapped: (BlockedProfiles) -> Void
   let onEditTapped: (BlockedProfiles) -> Void
   let onStatsTapped: (BlockedProfiles) -> Void
-  let onGrantExtraTimeTapped: (BlockedProfiles) -> Void
+  let onGrantExtraTimeTapped: (BlockedProfiles, String?) -> Void
   var selectedProfileId: UUID? = nil
   var onSelectProfile: ((BlockedProfiles) -> Void)? = nil
 
@@ -33,6 +34,7 @@ struct HomeProfilesListView: View {
             profile: profile,
             isBlocking: isBlocking,
             hasActiveOnDemandSession: hasActiveOnDemandSession,
+            activeUsageSessionId: activeUsageSessionIdByProfileId[profile.id],
             isActive: activeProfileIds.contains(profile.id),
             elapsedTime: elapsedTime,
             isPauseActive: pausedProfileIds.contains(profile.id),
@@ -56,7 +58,7 @@ struct HomeProfilesListView: View {
               onStatsTapped(profile)
             },
             onGrantExtraTimeTapped: {
-              onGrantExtraTimeTapped(profile)
+              onGrantExtraTimeTapped(profile, activeUsageSessionIdByProfileId[profile.id])
             }
           )
 
@@ -84,6 +86,7 @@ struct HomeProfilesByStrategyListView: View {
   let hasActiveOnDemandSession: Bool
   let activeProfileIds: Set<UUID>
   let enabledUsageProfileIds: Set<UUID>
+  let activeUsageSessionIdByProfileId: [UUID: String]
   let elapsedTime: TimeInterval
   let pausedProfileIds: Set<UUID>
   let stopCountdownRemainingByProfileId: [UUID: Int]
@@ -95,7 +98,7 @@ struct HomeProfilesByStrategyListView: View {
   let onStopTapped: (BlockedProfiles) -> Void
   let onEditTapped: (BlockedProfiles) -> Void
   let onStatsTapped: (BlockedProfiles) -> Void
-  let onGrantExtraTimeTapped: (BlockedProfiles) -> Void
+  let onGrantExtraTimeTapped: (BlockedProfiles, String?) -> Void
 
   private var usageBasedProfiles: [BlockedProfiles] {
     profiles.filter { $0.blockingStrategyId == UsageBasedBlockingStrategy.id }
@@ -114,6 +117,7 @@ struct HomeProfilesByStrategyListView: View {
         hasActiveOnDemandSession: hasActiveOnDemandSession,
         activeProfileIds: activeProfileIds,
         enabledUsageProfileIds: enabledUsageProfileIds,
+        activeUsageSessionIdByProfileId: activeUsageSessionIdByProfileId,
         elapsedTime: elapsedTime,
         pausedProfileIds: pausedProfileIds,
         stopCountdownRemainingByProfileId: stopCountdownRemainingByProfileId,
@@ -135,6 +139,7 @@ struct HomeProfilesByStrategyListView: View {
           hasActiveOnDemandSession: hasActiveOnDemandSession,
           activeProfileIds: activeProfileIds,
           enabledUsageProfileIds: enabledUsageProfileIds,
+          activeUsageSessionIdByProfileId: activeUsageSessionIdByProfileId,
           elapsedTime: elapsedTime,
           pausedProfileIds: pausedProfileIds,
           stopCountdownRemainingByProfileId: stopCountdownRemainingByProfileId,
@@ -159,6 +164,7 @@ private struct HomeProfilesStrategySection: View {
   let hasActiveOnDemandSession: Bool
   let activeProfileIds: Set<UUID>
   let enabledUsageProfileIds: Set<UUID>
+  let activeUsageSessionIdByProfileId: [UUID: String]
   let elapsedTime: TimeInterval
   let pausedProfileIds: Set<UUID>
   let stopCountdownRemainingByProfileId: [UUID: Int]
@@ -169,7 +175,7 @@ private struct HomeProfilesStrategySection: View {
   let onStopTapped: (BlockedProfiles) -> Void
   let onEditTapped: (BlockedProfiles) -> Void
   let onStatsTapped: (BlockedProfiles) -> Void
-  let onGrantExtraTimeTapped: (BlockedProfiles) -> Void
+  let onGrantExtraTimeTapped: (BlockedProfiles, String?) -> Void
 
   private var isUsageBasedSection: Bool {
     title == "Usage based"
@@ -218,6 +224,7 @@ private struct HomeProfilesStrategySection: View {
             profile: profile,
             isBlocking: isBlocking,
             hasActiveOnDemandSession: hasActiveOnDemandSession,
+            activeUsageSessionId: activeUsageSessionIdByProfileId[profile.id],
             isActive: activeProfileIds.contains(profile.id),
             elapsedTime: elapsedTime,
             isPauseActive: pausedProfileIds.contains(profile.id),
@@ -230,7 +237,9 @@ private struct HomeProfilesStrategySection: View {
             onStopTapped: { onStopTapped(profile) },
             onEditTapped: { onEditTapped(profile) },
             onStatsTapped: { onStatsTapped(profile) },
-            onGrantExtraTimeTapped: { onGrantExtraTimeTapped(profile) }
+            onGrantExtraTimeTapped: {
+              onGrantExtraTimeTapped(profile, activeUsageSessionIdByProfileId[profile.id])
+            }
           )
 
           if index < profiles.count - 1 {
@@ -288,6 +297,7 @@ private struct HomeProfileRow: View {
   let profile: BlockedProfiles
   let isBlocking: Bool
   let hasActiveOnDemandSession: Bool
+  let activeUsageSessionId: String?
   let isActive: Bool
   let elapsedTime: TimeInterval
   let isPauseActive: Bool
@@ -331,15 +341,30 @@ private struct HomeProfileRow: View {
   }
 
   private var strategyState: UsageBasedMonitoringState? {
-    UsageBasedActivityScheduler.state(for: profile.id)
+    guard let activeUsageSessionId else { return nil }
+    return UsageBasedActivityScheduler.state(
+      for: profile.id,
+      sessionId: activeUsageSessionId,
+      at: Date(),
+      calendar: .current
+    )
   }
 
   private var usageConfiguration: UsageBasedStrategyData {
     UsageBasedStrategyData.decode(profile.strategyData)
   }
 
-  private var usageTotalMinutes: Int {
-    max(1, usageConfiguration.allowanceInMinutes)
+  private var usageBaseAllowanceMinutes: Int {
+    max(1, strategyState?.baseAllowanceInMinutes ?? usageConfiguration.allowanceInMinutes)
+  }
+
+  private var usageGrantedExtraMinutes: Int {
+    guard let state = strategyState else { return 0 }
+    return max(0, state.allowanceInMinutes - usageBaseAllowanceMinutes)
+  }
+
+  private var usageDisplayTotalMinutes: Int {
+    usageBaseAllowanceMinutes + usageGrantedExtraMinutes
   }
 
   private var usageUsedMinutes: Int {
@@ -347,16 +372,28 @@ private struct HomeProfileRow: View {
     return strategyState?.usedMinutes ?? 0
   }
 
+  private var usagePeriodUsedMinutes: Int {
+    let used = max(0, usageUsedMinutes)
+    if strategyState?.allowanceReached == true {
+      return max(used, usageDisplayTotalMinutes)
+    }
+    return used
+  }
+
   private var usageCappedUsedMinutes: Int {
-    min(usageUsedMinutes, usageTotalMinutes)
+    min(usageUsedMinutes, usageDisplayTotalMinutes)
   }
 
   private var usageRemainingMinutes: Int {
-    max(0, usageTotalMinutes - usageUsedMinutes)
+    max(0, usageDisplayTotalMinutes - usageUsedMinutes)
   }
 
   private var usageAllowanceIndicatorText: String {
-    "\(usageCappedUsedMinutes)m / \(usageTotalMinutes)m"
+    if usageGrantedExtraMinutes > 0 {
+      return "\(usagePeriodUsedMinutes)m/\(usageBaseAllowanceMinutes)m + \(usageGrantedExtraMinutes)m"
+    }
+
+    return "\(usagePeriodUsedMinutes)m/\(usageBaseAllowanceMinutes)m"
   }
 
   private enum UsageVisualState {
@@ -371,7 +408,7 @@ private struct HomeProfileRow: View {
     guard isActive else { return .inactive }
     if isPauseActive { return .paused }
     if strategyState?.allowanceReached == true { return .blocking }
-    if let state = strategyState, state.allowanceInMinutes > usageConfiguration.allowanceInMinutes {
+    if usageGrantedExtraMinutes > 0 {
       return .extraTime
     }
     return .active
@@ -392,17 +429,24 @@ private struct HomeProfileRow: View {
       return "Scheduled"
     }
 
-    guard let state = strategyState else { return nil }
-    let resetDate = state.windowStart.addingTimeInterval(3600)
-    let interval = max(0, resetDate.timeIntervalSinceNow)
+    guard strategyState != nil else { return nil }
+    let interval = usageResetInterval
     guard interval > 0 else { return nil }
     return "Resets in \(max(1, Int(interval / 60)))m"
   }
 
-  private var nextResetInterval: TimeInterval {
+  private var usageResetInterval: TimeInterval {
+    if let currentHour = Calendar.current.dateInterval(of: .hour, for: Date()) {
+      return max(0, currentHour.end.timeIntervalSinceNow)
+    }
+
     guard let state = strategyState else { return 0 }
     let resetDate = state.windowStart.addingTimeInterval(3600)
     return max(0, resetDate.timeIntervalSinceNow)
+  }
+
+  private var nextResetInterval: TimeInterval {
+    usageResetInterval
   }
 
   private var usageBarColor: Color {
@@ -447,7 +491,7 @@ private struct HomeProfileRow: View {
       return 1
     }
 
-    return CGFloat(Double(usageCappedUsedMinutes) / Double(usageTotalMinutes))
+    return CGFloat(Double(usageCappedUsedMinutes) / Double(max(1, usageDisplayTotalMinutes)))
   }
 
   private var scheduleInfoText: String {

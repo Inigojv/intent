@@ -299,6 +299,116 @@ final class UsageBasedBlockingTests: XCTestCase {
     )
   }
 
+  func testResolveReconcileModeRecoversExistingSessionInCurrentWindow() {
+    let profileId = UUID()
+    let sessionId = UUID().uuidString
+    let windowStart = Date(timeIntervalSince1970: 1_800_000)
+    let existing = makeState(
+      profileId: profileId,
+      sessionId: sessionId,
+      windowStart: windowStart,
+      allowanceInMinutes: 25
+    )
+
+    let mode = UsageBasedActivityScheduler.resolveReconcileMode(
+      profileId: profileId,
+      sessionId: sessionId,
+      windowStart: windowStart,
+      states: [existing]
+    )
+
+    switch mode {
+    case .recoverExistingSession(let state):
+      XCTAssertEqual(state, existing)
+    default:
+      XCTFail("Expected recoverExistingSession")
+    }
+  }
+
+  func testResolveReconcileModeTransitionsSessionOnHourBoundary() {
+    let profileId = UUID()
+    let sessionId = UUID().uuidString
+    let previousWindow = Date(timeIntervalSince1970: 1_800_000)
+    let newWindow = previousWindow.addingTimeInterval(3600)
+    let previous = makeState(
+      profileId: profileId,
+      sessionId: sessionId,
+      windowStart: previousWindow,
+      allowanceInMinutes: 20
+    )
+
+    let mode = UsageBasedActivityScheduler.resolveReconcileMode(
+      profileId: profileId,
+      sessionId: sessionId,
+      windowStart: newWindow,
+      states: [previous]
+    )
+
+    switch mode {
+    case .transitionToNewHour(let state):
+      XCTAssertEqual(state, previous)
+    default:
+      XCTFail("Expected transitionToNewHour")
+    }
+  }
+
+  func testResolveReconcileModeMigratesSameHourToAuthoritativeState() {
+    let profileId = UUID()
+    let windowStart = Date(timeIntervalSince1970: 1_900_000)
+    var candidateA = makeState(
+      profileId: profileId,
+      sessionId: UUID().uuidString,
+      windowStart: windowStart,
+      allowanceInMinutes: 20
+    )
+    candidateA.usedMinutes = 10
+
+    var candidateB = makeState(
+      profileId: profileId,
+      sessionId: UUID().uuidString,
+      windowStart: windowStart,
+      allowanceInMinutes: 30
+    )
+    candidateB.usedMinutes = 6
+
+    let mode = UsageBasedActivityScheduler.resolveReconcileMode(
+      profileId: profileId,
+      sessionId: UUID().uuidString,
+      windowStart: windowStart,
+      states: [candidateA, candidateB]
+    )
+
+    switch mode {
+    case .migrateSameHour(let authoritative, let duplicates):
+      XCTAssertEqual(authoritative, candidateB)
+      XCTAssertEqual(duplicates.count, 1)
+      XCTAssertEqual(duplicates.first, candidateA)
+    default:
+      XCTFail("Expected migrateSameHour")
+    }
+  }
+
+  func testResolveReconcileModeFlagsFutureWindowAsAmbiguous() {
+    let profileId = UUID()
+    let sessionId = UUID().uuidString
+    let windowStart = Date(timeIntervalSince1970: 2_000_000)
+    let future = makeState(
+      profileId: profileId,
+      sessionId: sessionId,
+      windowStart: windowStart.addingTimeInterval(3600),
+      allowanceInMinutes: 20
+    )
+
+    let mode = UsageBasedActivityScheduler.resolveReconcileMode(
+      profileId: profileId,
+      sessionId: sessionId,
+      windowStart: windowStart,
+      states: [future]
+    )
+
+    XCTAssertEqual(mode, .ambiguousFutureState)
+  }
+
   private func makeState(
     profileId: UUID,
     sessionId: String,

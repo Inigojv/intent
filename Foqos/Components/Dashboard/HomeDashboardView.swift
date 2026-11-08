@@ -72,6 +72,45 @@ struct HomeDashboardView: View {
     return countdowns
   }
 
+  private var activeUsageSessionIdByProfileId: [UUID: String] {
+    var sessionsByProfile: [UUID: [BlockedProfileSession]] = [:]
+
+    for session in activeSessions where session.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id {
+      sessionsByProfile[session.blockedProfile.id, default: []].append(session)
+    }
+
+    var resolved: [UUID: String] = [:]
+    for (profileId, sessions) in sessionsByProfile {
+      let candidates = sessions.compactMap { session -> (String, UsageBasedMonitoringState)? in
+        guard
+          let state = UsageBasedActivityScheduler.state(
+            for: profileId,
+            sessionId: session.id,
+            at: Date(),
+            calendar: .current
+          )
+        else { return nil }
+        return (session.id, state)
+      }
+
+      let states = candidates.map(\ .1)
+      if let authoritative = UsageBasedActivityScheduler.chooseAuthoritativeState(candidates: states),
+        let bestSessionId = candidates.first(where: {
+          $0.1.sessionId == authoritative.sessionId
+            && $0.1.windowStart == authoritative.windowStart
+            && $0.1.profileId == authoritative.profileId
+        })?.0
+      {
+        resolved[profileId] = bestSessionId
+      } else {
+        // Fallback to newest active session for this profile.
+        resolved[profileId] = sessions.first?.id
+      }
+    }
+
+    return resolved
+  }
+
   private var usageBasedProfiles: [BlockedProfiles] {
     profiles.filter { $0.blockingStrategyId == UsageBasedBlockingStrategy.id }
   }
@@ -120,6 +159,7 @@ struct HomeDashboardView: View {
             hasActiveOnDemandSession: hasActiveOnDemandSession,
             activeProfileIds: activeProfileIds,
             enabledUsageProfileIds: enabledUsageProfileIds,
+            activeUsageSessionIdByProfileId: activeUsageSessionIdByProfileId,
             elapsedTime: strategyManager.elapsedTime,
             pausedProfileIds: pausedProfileIds,
             stopCountdownRemainingByProfileId: stopCountdownRemainingByProfileId,
@@ -141,6 +181,7 @@ struct HomeDashboardView: View {
             isBlocking: strategyManager.isBlocking,
             hasActiveOnDemandSession: hasActiveOnDemandSession,
             activeProfileIds: activeProfileIds,
+            activeUsageSessionIdByProfileId: activeUsageSessionIdByProfileId,
             elapsedTime: strategyManager.elapsedTime,
             pausedProfileIds: pausedProfileIds,
             stopCountdownRemainingByProfileId: stopCountdownRemainingByProfileId,
@@ -275,8 +316,12 @@ struct HomeDashboardView: View {
     return minutesNow >= startMinutes || minutesNow < endMinutes
   }
 
-  private func grantExtraTime(_ profile: BlockedProfiles) {
-    strategyManager.grantExtraTime(context: modelContext, profileID: profile.id)
+  private func grantExtraTime(_ profile: BlockedProfiles, activeUsageSessionId: String?) {
+    strategyManager.grantExtraTime(
+      context: modelContext,
+      profileID: profile.id,
+      sessionID: activeUsageSessionId
+    )
   }
 }
 

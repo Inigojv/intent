@@ -97,9 +97,22 @@ class StrategyManager: ObservableObject {
 
     pruneStaleUsageMonitoring(context: context)
 
-    if let session = activeSession,
-      session.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id
-    {
+    let activeSessionsDescriptor = FetchDescriptor<BlockedProfileSession>(
+      predicate: #Predicate { $0.endTime == nil },
+      sortBy: [SortDescriptor(\BlockedProfileSession.startTime, order: .reverse)]
+    )
+    let activeSessions = (try? context.fetch(activeSessionsDescriptor)) ?? []
+    let activeUsageSessions = activeSessions.filter {
+      $0.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id
+    }
+
+    var reconciledProfileIDs = Set<UUID>()
+    for session in activeUsageSessions {
+      if reconciledProfileIDs.contains(session.blockedProfile.id) {
+        continue
+      }
+      reconciledProfileIDs.insert(session.blockedProfile.id)
+
       let profile = session.blockedProfile
       let configuration = UsageBasedStrategyData.decode(profile.strategyData)
       do {
@@ -110,7 +123,10 @@ class StrategyManager: ObservableObject {
           categoryTokens: profile.selectedActivity.categoryTokens,
           webDomainTokens: profile.selectedActivity.webDomainTokens,
           allowanceInMinutes: configuration.allowanceInMinutes,
-          enableFiveMinuteWarning: configuration.enableFiveMinuteWarning
+          enableFiveMinuteWarning: NotificationPreferences.allowanceWarningEnabled,
+          extraTimeInMinutes: configuration.extraTimeInMinutes,
+          enableExtraTimeReduction: configuration.enableExtraTimeReduction,
+          extraTimeCooldownInSeconds: configuration.extraTimeCooldownInSeconds
         )
       } catch {
         errorMessage = "Failed to resume hourly usage monitoring: \(error.localizedDescription)"
@@ -153,14 +169,16 @@ class StrategyManager: ObservableObject {
       FetchDescriptor<BlockedProfileSession>(predicate: #Predicate { $0.endTime == nil })
     )) ?? []
 
-    let activeUsageSessionIDs = Set(
-      activeSessions.filter {
-        $0.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id
-      }.map(\.id)
-    )
+    let activeUsageSessions = activeSessions.filter {
+      $0.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id
+    }
+
+    let activeUsageSessionIDs = Set(activeUsageSessions.map(\.id))
+    let activeUsageProfileIDs = Set(activeUsageSessions.map { $0.blockedProfile.id })
 
     let staleUsageStates = UsageBasedActivityScheduler.allStates.filter {
       !activeUsageSessionIDs.contains($0.sessionId)
+        && !activeUsageProfileIDs.contains($0.profileId)
     }
 
     for state in staleUsageStates {
@@ -247,9 +265,39 @@ class StrategyManager: ObservableObject {
 
   func grantExtraTime(context: ModelContext) {
     guard let session = activeSession,
-      session.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id,
-      let state = UsageBasedActivityScheduler.state(for: session.id)
+      session.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id
     else {
+      return
+    }
+
+    if UsageBasedActivityScheduler.state(
+      for: session.blockedProfile.id,
+      sessionId: session.id,
+      at: Date(),
+      calendar: .current
+    ) == nil {
+      let profile = session.blockedProfile
+      let configuration = UsageBasedStrategyData.decode(profile.strategyData)
+      try? UsageBasedActivityScheduler.reconcile(
+        profileId: profile.id,
+        sessionId: session.id,
+        applicationTokens: profile.selectedActivity.applicationTokens,
+        categoryTokens: profile.selectedActivity.categoryTokens,
+        webDomainTokens: profile.selectedActivity.webDomainTokens,
+        allowanceInMinutes: configuration.allowanceInMinutes,
+        enableFiveMinuteWarning: NotificationPreferences.allowanceWarningEnabled,
+        extraTimeInMinutes: configuration.extraTimeInMinutes,
+        enableExtraTimeReduction: configuration.enableExtraTimeReduction,
+        extraTimeCooldownInSeconds: configuration.extraTimeCooldownInSeconds
+      )
+    }
+
+    guard let state = UsageBasedActivityScheduler.state(
+      for: session.blockedProfile.id,
+      sessionId: session.id,
+      at: Date(),
+      calendar: .current
+    ) else {
       return
     }
 
@@ -285,11 +333,52 @@ class StrategyManager: ObservableObject {
     }
   }
 
-  func grantExtraTime(context: ModelContext, profileID: UUID) {
-    guard let session = activeSessionForProfile(context: context, profileID: profileID),
-      session.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id,
-      let state = UsageBasedActivityScheduler.state(for: session.id)
+  func grantExtraTime(context: ModelContext, profileID: UUID, sessionID: String? = nil) {
+    let resolvedSession: BlockedProfileSession?
+    if let sessionID,
+      let session = try? BlockedProfileSession.findSession(byID: sessionID, in: context),
+      session.endTime == nil,
+      session.blockedProfile.id == profileID
+    {
+      resolvedSession = session
+    } else {
+      resolvedSession = activeSessionForProfile(context: context, profileID: profileID)
+    }
+
+    guard let session = resolvedSession,
+      session.blockedProfile.blockingStrategyId == UsageBasedBlockingStrategy.id
     else {
+      return
+    }
+
+    if UsageBasedActivityScheduler.state(
+      for: session.blockedProfile.id,
+      sessionId: session.id,
+      at: Date(),
+      calendar: .current
+    ) == nil {
+      let profile = session.blockedProfile
+      let configuration = UsageBasedStrategyData.decode(profile.strategyData)
+      try? UsageBasedActivityScheduler.reconcile(
+        profileId: profile.id,
+        sessionId: session.id,
+        applicationTokens: profile.selectedActivity.applicationTokens,
+        categoryTokens: profile.selectedActivity.categoryTokens,
+        webDomainTokens: profile.selectedActivity.webDomainTokens,
+        allowanceInMinutes: configuration.allowanceInMinutes,
+        enableFiveMinuteWarning: NotificationPreferences.allowanceWarningEnabled,
+        extraTimeInMinutes: configuration.extraTimeInMinutes,
+        enableExtraTimeReduction: configuration.enableExtraTimeReduction,
+        extraTimeCooldownInSeconds: configuration.extraTimeCooldownInSeconds
+      )
+    }
+
+    guard let state = UsageBasedActivityScheduler.state(
+      for: profileID,
+      sessionId: session.id,
+      at: Date(),
+      calendar: .current
+    ) else {
       return
     }
 
@@ -1019,9 +1108,11 @@ class StrategyManager: ObservableObject {
     context: ModelContext,
     profileID: UUID
   ) -> BlockedProfileSession? {
-    let descriptor = FetchDescriptor<BlockedProfileSession>(
-      predicate: #Predicate { $0.endTime == nil && $0.blockedProfile.id == profileID }
+    var descriptor = FetchDescriptor<BlockedProfileSession>(
+      predicate: #Predicate { $0.endTime == nil && $0.blockedProfile.id == profileID },
+      sortBy: [SortDescriptor(\BlockedProfileSession.startTime, order: .reverse)]
     )
+    descriptor.fetchLimit = 1
 
     return try? context.fetch(descriptor).first
   }
