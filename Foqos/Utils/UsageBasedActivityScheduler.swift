@@ -8,6 +8,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
   let applicationTokens: Set<ApplicationToken>
   let categoryTokens: Set<ActivityCategoryToken>
   let webDomainTokens: Set<WebDomainToken>
+  let baseAllowanceInMinutes: Int
   var allowanceInMinutes: Int
   let enableFiveMinuteWarning: Bool
   var extraTimeInMinutes: Int
@@ -26,6 +27,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     applicationTokens: Set<ApplicationToken>,
     categoryTokens: Set<ActivityCategoryToken>,
     webDomainTokens: Set<WebDomainToken>,
+    baseAllowanceInMinutes: Int? = nil,
     allowanceInMinutes: Int,
     enableFiveMinuteWarning: Bool = true,
     extraTimeInMinutes: Int = UsageBasedStrategyData.defaultExtraTimeInMinutes,
@@ -43,6 +45,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     self.applicationTokens = applicationTokens
     self.categoryTokens = categoryTokens
     self.webDomainTokens = webDomainTokens
+    self.baseAllowanceInMinutes = baseAllowanceInMinutes ?? allowanceInMinutes
     self.allowanceInMinutes = allowanceInMinutes
     self.enableFiveMinuteWarning = enableFiveMinuteWarning
     self.extraTimeInMinutes = extraTimeInMinutes
@@ -62,6 +65,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     case applicationTokens
     case categoryTokens
     case webDomainTokens
+    case baseAllowanceInMinutes
     case allowanceInMinutes
     case enableFiveMinuteWarning
     case extraTimeInMinutes
@@ -83,6 +87,10 @@ struct UsageBasedMonitoringState: Codable, Equatable {
     categoryTokens = try container.decode(Set<ActivityCategoryToken>.self, forKey: .categoryTokens)
     webDomainTokens = try container.decode(Set<WebDomainToken>.self, forKey: .webDomainTokens)
     allowanceInMinutes = try container.decode(Int.self, forKey: .allowanceInMinutes)
+    baseAllowanceInMinutes = try container.decodeIfPresent(
+      Int.self,
+      forKey: .baseAllowanceInMinutes
+    ) ?? allowanceInMinutes
     enableFiveMinuteWarning = try container.decodeIfPresent(
       Bool.self,
       forKey: .enableFiveMinuteWarning
@@ -150,6 +158,7 @@ struct UsageBasedMonitoringState: Codable, Equatable {
 
   mutating func beginWindow(at date: Date) {
     windowStart = date
+    allowanceInMinutes = baseAllowanceInMinutes
     usedMinutes = 0
     warningSent = false
     allowanceReached = false
