@@ -64,7 +64,7 @@ struct HomeDashboardView: View {
     var countdowns: [UUID: Int] = [:]
 
     for session in activeSessions {
-      if let remaining = strategyManager.stopCountdownRemaining(for: session.id), remaining > 0 {
+      if let remaining = strategyManager.stopCountdownRemaining(for: session.id), remaining >= 0 {
         countdowns[session.blockedProfile.id] = remaining
       }
     }
@@ -258,9 +258,34 @@ struct HomeDashboardView: View {
   }
 
   private func stopAllUsageProfiles() {
-    setUsageAllowancesEnabled(false)
+    let activeUsageProfiles = usageBasedProfiles.filter { activeProfileIds.contains($0.id) }
+    if activeUsageProfiles.isEmpty {
+      setUsageAllowancesEnabled(false)
+      return
+    }
 
-    for profile in usageBasedProfiles where activeProfileIds.contains(profile.id) {
+    let activeUsageSessionIDs = activeUsageProfiles.compactMap { activeUsageSessionIdByProfileId[$0.id] }
+    let hasActiveCountdown = activeUsageSessionIDs.contains {
+      (strategyManager.stopCountdownRemaining(for: $0) ?? -1) > 0
+    }
+    if hasActiveCountdown {
+      strategyManager.errorMessage = "Wait for stopping countdown to finish, then tap Stop again."
+      return
+    }
+
+    let hasReadyConfirmation = activeUsageSessionIDs.contains {
+      strategyManager.stopCountdownRemaining(for: $0) == 0
+    }
+
+    if hasReadyConfirmation {
+      for profile in activeUsageProfiles {
+        onStopProfile(profile)
+      }
+      setUsageAllowancesEnabled(false)
+      return
+    }
+
+    for profile in activeUsageProfiles {
       onStopProfile(profile)
     }
   }

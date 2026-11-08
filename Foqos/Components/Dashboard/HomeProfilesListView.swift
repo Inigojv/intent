@@ -190,9 +190,16 @@ private struct HomeProfilesStrategySection: View {
     profiles.contains { (stopCountdownRemainingByProfileId[$0.id] ?? 0) > 0 }
   }
 
+  private var hasReadyStopConfirmationInSection: Bool {
+    profiles.contains { stopCountdownRemainingByProfileId[$0.id] == 0 }
+  }
+
   private var usageHeaderTitle: String {
     if hasStopCountdownInSection {
       return "Stopping..."
+    }
+    if hasReadyStopConfirmationInSection {
+      return "Stop again"
     }
     if hasEnabledUsageProfilesInSection {
       return "Stop all"
@@ -204,12 +211,18 @@ private struct HomeProfilesStrategySection: View {
     if hasStopCountdownInSection {
       return "timer"
     }
+    if hasReadyStopConfirmationInSection {
+      return "stop.fill"
+    }
     return hasEnabledUsageProfilesInSection ? "stop.fill" : "play.fill"
   }
 
   private var usageHeaderColor: Color {
     if hasStopCountdownInSection {
       return .orange
+    }
+    if hasReadyStopConfirmationInSection {
+      return .red
     }
     return hasEnabledUsageProfilesInSection ? .red : .green
   }

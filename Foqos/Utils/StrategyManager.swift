@@ -198,6 +198,16 @@ class StrategyManager: ObservableObject {
 
     if let activeSession = activeSessionForProfile(context: context, profileID: activeProfile.id) {
       if activeProfile.stopDelayInSeconds > 0 {
+        if let remaining = stopCountdownRemainingBySessionId[activeSession.id] {
+          if remaining > 0 {
+            errorMessage = "Wait \(remaining)s, then tap stop again to disable."
+            return
+          }
+
+          confirmStopCountdown(context: context, sessionId: activeSession.id)
+          return
+        }
+
         beginUsageBasedStopCountdown(
           context: context,
           profile: activeProfile,
@@ -1240,10 +1250,9 @@ class StrategyManager: ObservableObject {
       if remaining <= 0 {
         self.stopCountdownTimersBySessionId[sessionID]?.invalidate()
         self.stopCountdownTimersBySessionId[sessionID] = nil
-        self.stopCountdownRemainingBySessionId.removeValue(forKey: sessionID)
+        // Require a second explicit user action to confirm stop after delay expires.
+        self.stopCountdownRemainingBySessionId[sessionID] = 0
         self.syncLegacyStopCountdownState()
-        let targetSession = try? BlockedProfileSession.findSession(byID: sessionID, in: context)
-        self.forceStopSession(context: context, session: targetSession)
       }
     }
   }
