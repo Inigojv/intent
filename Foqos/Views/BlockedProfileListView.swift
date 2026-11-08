@@ -126,7 +126,7 @@ struct BlockedProfileListView: View {
           .environment(\.editMode, $editMode)
         }
       }
-      .navigationTitle(listType == .usageBased ? "Usage-Based" : "Profiles")
+      .navigationTitle(listType == .usageBased ? "Allowances" : "Profiles")
       .toolbar {
         ToolbarItem(placement: .topBarLeading) {
           Button(action: { dismiss() }) {

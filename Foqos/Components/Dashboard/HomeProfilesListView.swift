@@ -111,7 +111,7 @@ struct HomeProfilesByStrategyListView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
       HomeProfilesStrategySection(
-        title: "Usage based",
+        title: "Allowances",
         profiles: usageBasedProfiles,
         isBlocking: isBlocking,
         hasActiveOnDemandSession: hasActiveOnDemandSession,
@@ -196,10 +196,10 @@ private struct HomeProfilesStrategySection: View {
 
   private var usageHeaderTitle: String {
     if hasStopCountdownInSection {
-      return "Stopping..."
+      return "Wait"
     }
     if hasReadyStopConfirmationInSection {
-      return "Stop again"
+      return "Stop"
     }
     if hasEnabledUsageProfilesInSection {
       return "Stop all"
